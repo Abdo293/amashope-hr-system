@@ -17,13 +17,16 @@ import {
   UserX,
   AlertTriangle,
   Pencil,
+  Trash2,
 } from 'lucide-react';
 import { getErrorMessage } from '../../lib/utils';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export const ProjectDetail: React.FC = () => {
   const { id: projectId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [, setSearchParams] = useSearchParams();
+  const { confirm, showAlert } = useConfirm();
 
   const { hrUser } = useAuth();
   const [project, setProject] = useState<HRProject | null>(null);
@@ -91,6 +94,13 @@ export const ProjectDetail: React.FC = () => {
 
   useEffect(() => {
     fetchProjectData();
+    const handleUpdate = () => fetchProjectData();
+    window.addEventListener('hr:task-updated', handleUpdate);
+    window.addEventListener('hr:task-deleted', handleUpdate);
+    return () => {
+      window.removeEventListener('hr:task-updated', handleUpdate);
+      window.removeEventListener('hr:task-deleted', handleUpdate);
+    };
   }, [fetchProjectData]);
 
   // Load available employees for Add Member modal
@@ -138,7 +148,13 @@ export const ProjectDetail: React.FC = () => {
 
   const handleRemoveMember = async (member: HRProjectMember) => {
     const userName = member.hr_users?.full_name || 'العضو';
-    if (!confirm(`هل أنت تأكد من رغبتك في إزالة ${userName} من هذا المشروع؟`)) return;
+    const ok = await confirm({
+      title: 'إزالة عضو من المشروع',
+      message: `هل أنت متأكد من رغبتك في إزالة ${userName} من هذا المشروع؟`,
+      confirmText: 'إزالة العضو',
+      variant: 'warning',
+    });
+    if (!ok) return;
 
     try {
       // Execute safe member removal RPC
@@ -150,7 +166,7 @@ export const ProjectDetail: React.FC = () => {
       if (error) throw error;
       await fetchProjectData();
     } catch (err: unknown) {
-      alert(`لا يمكن إزالة العضو: ${getErrorMessage(err)}`);
+      await showAlert(`لا يمكن إزالة العضو: ${getErrorMessage(err)}`);
     }
   };
 
@@ -181,7 +197,7 @@ export const ProjectDetail: React.FC = () => {
       setTaskDueDate('');
       await fetchProjectData();
     } catch (err: unknown) {
-      alert(`فشل إنشاء المهمة: ${getErrorMessage(err)}`);
+      await showAlert(`فشل إنشاء المهمة: ${getErrorMessage(err)}`);
     } finally {
       setTaskSubmitting(false);
     }
@@ -203,9 +219,67 @@ export const ProjectDetail: React.FC = () => {
       setIsEditProjectOpen(false);
       await fetchProjectData();
     } catch (error) {
-      alert(`فشل تعديل المشروع: ${getErrorMessage(error)}`);
+      await showAlert(`فشل تعديل المشروع: ${getErrorMessage(error)}`);
     } finally {
       setTaskSubmitting(false);
+    }
+  };
+
+  const handleDeleteProject = async () => {
+    if (!project || !projectId) return;
+    const ok = await confirm({
+      title: 'حذف المشروع نهائياً',
+      message: `هل أنت متأكد تماماً من حذف مشروع "${project.name}" نهائياً؟\nسيتم حذف جميع المهام التابعة له فوراً.`,
+      confirmText: 'حذف المشروع',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
+    try {
+      const { error: rpcError } = await supabase.rpc('hr_admin_delete_project', {
+        p_project_id: projectId,
+      });
+
+      if (rpcError) {
+        const { error: directError } = await supabase
+          .from('hr_projects')
+          .delete()
+          .eq('id', projectId);
+        if (directError) throw directError;
+      }
+
+      navigate('/admin/projects');
+    } catch (err: unknown) {
+      await showAlert(`فشل حذف المشروع: ${getErrorMessage(err)}`);
+    }
+  };
+
+  const handleDeleteTask = async (taskItem: HRTask, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const ok = await confirm({
+      title: 'حذف المهمة نهائياً',
+      message: `هل أنت متأكد من حذف المهمة "${taskItem.title}" نهائياً؟`,
+      confirmText: 'حذف المهمة',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
+    try {
+      const { error: rpcError } = await supabase.rpc('hr_admin_delete_task', {
+        p_task_id: taskItem.id,
+      });
+
+      if (rpcError) {
+        const { error: directError } = await supabase
+          .from('hr_tasks')
+          .delete()
+          .eq('id', taskItem.id);
+        if (directError) throw directError;
+      }
+
+      await fetchProjectData();
+    } catch (err: unknown) {
+      await showAlert(`فشل حذف المهمة: ${getErrorMessage(err)}`);
     }
   };
 
@@ -268,6 +342,18 @@ export const ProjectDetail: React.FC = () => {
                   <Pencil />
                   تعديل المشروع
                 </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  onClick={handleDeleteProject}
+                  className="rounded-xl text-xs text-rose-600 border-rose-200 dark:border-rose-900 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                >
+                  <Trash2 />
+                  حذف المشروع
+                </Button>
+
                 <button
                   onClick={handleOpenAddMember}
                   className="px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors"
@@ -349,9 +435,19 @@ export const ProjectDetail: React.FC = () => {
 
                   <div className="pt-2 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-100 dark:border-slate-800">
                     <span>المسند إليه: {task.hr_users?.full_name || 'غير محدد'}</span>
-                    <span>
-                      {task.due_date ? `موعد التسليم: ${new Date(task.due_date).toLocaleDateString('ar-EG')}` : 'بدون موعد تسليم'}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span>
+                        {task.due_date ? `موعد التسليم: ${new Date(task.due_date).toLocaleDateString('ar-EG')}` : 'بدون موعد تسليم'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteTask(task, e)}
+                        title="حذف المهمة"
+                        className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

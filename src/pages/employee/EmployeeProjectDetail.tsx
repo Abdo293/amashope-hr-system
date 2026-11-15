@@ -53,6 +53,13 @@ export const EmployeeProjectDetail: React.FC = () => {
 
   useEffect(() => {
     fetchEmployeeProjectData();
+    const handleUpdate = () => fetchEmployeeProjectData();
+    window.addEventListener('hr:task-updated', handleUpdate);
+    window.addEventListener('hr:task-deleted', handleUpdate);
+    return () => {
+      window.removeEventListener('hr:task-updated', handleUpdate);
+      window.removeEventListener('hr:task-deleted', handleUpdate);
+    };
   }, [fetchEmployeeProjectData]);
 
   const getArabicTaskStatus = (status: string) => {

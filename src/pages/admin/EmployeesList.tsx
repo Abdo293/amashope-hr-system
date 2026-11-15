@@ -1,23 +1,25 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import type { HRUser, HRRole } from '../../types/hr';
+import type { HRUser, HRRole, HRProject } from '../../types/hr';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { TableSkeleton } from '../../components/ui/Skeleton';
-import { Users, UserPlus, Search, Power, AlertCircle, KeyRound, Copy, CheckCircle2 } from 'lucide-react';
+import { Users, UserPlus, Search, Power, AlertCircle, KeyRound, Copy, CheckCircle2, Pencil, Trash2, PlusSquare } from 'lucide-react';
 import { getErrorMessage } from '../../lib/utils';
 import { useAuth } from '../../context/AuthContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export const EmployeesList: React.FC = () => {
   const { user: signedInUser } = useAuth();
+  const { confirm, showAlert } = useConfirm();
   const [users, setUsers] = useState<HRUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | HRRole>('all');
 
-  // Modal State
+  // Modal State: Create User
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
@@ -34,6 +36,26 @@ export const EmployeesList: React.FC = () => {
   const [resettingUserId, setResettingUserId] = useState<string | null>(null);
   const [pendingResetUser, setPendingResetUser] = useState<HRUser | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Modal State: Edit User
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<HRUser | null>(null);
+  const [editFullName, setEditFullName] = useState('');
+  const [editRole, setEditRole] = useState<HRRole>('employee');
+  const [editIsActive, setEditIsActive] = useState<boolean>(true);
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  // Modal State: Assign Task
+  const [isAssignTaskOpen, setIsAssignTaskOpen] = useState(false);
+  const [assignUser, setAssignUser] = useState<HRUser | null>(null);
+  const [projects, setProjects] = useState<HRProject[]>([]);
+  const [taskProjectId, setTaskProjectId] = useState('');
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskDesc, setTaskDesc] = useState('');
+  const [taskDueDate, setTaskDueDate] = useState('');
+  const [taskSubmitting, setTaskSubmitting] = useState(false);
+  const [taskError, setTaskError] = useState<string | null>(null);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -66,7 +88,13 @@ export const EmployeesList: React.FC = () => {
     const newStatus = !user.is_active;
     const actionName = newStatus ? 'تفعيل' : 'تعطيل';
 
-    if (!confirm(`هل أنت تأكد من رغبتك في ${actionName} حساب الموظف ${user.full_name}؟`)) return;
+    const ok = await confirm({
+      title: newStatus ? 'تفعيل حساب الموظف' : 'تعطيل حساب الموظف',
+      message: `هل أنت متأكد من رغبتك في ${actionName} حساب الموظف "${user.full_name}"؟`,
+      confirmText: actionName,
+      variant: newStatus ? 'info' : 'warning',
+    });
+    if (!ok) return;
 
     try {
       const { data, error } = await supabase.functions.invoke('hr-manage-user', {
@@ -83,7 +111,7 @@ export const EmployeesList: React.FC = () => {
 
       await fetchUsers();
     } catch (err: unknown) {
-      alert(`فشل ${actionName} الموظف: ${getErrorMessage(err)}`);
+      await showAlert(`فشل ${actionName} الموظف: ${getErrorMessage(err)}`);
     }
   };
 
@@ -148,7 +176,7 @@ export const EmployeesList: React.FC = () => {
       setPendingResetUser(null);
       await fetchUsers();
     } catch (err: unknown) {
-      alert(`فشل إعادة تعيين كلمة المرور: ${getErrorMessage(err)}`);
+      await showAlert(`فشل إعادة تعيين كلمة المرور: ${getErrorMessage(err)}`);
     } finally {
       setResettingUserId(null);
     }
@@ -166,17 +194,156 @@ export const EmployeesList: React.FC = () => {
 
   const handleRoleChange = async (user: HRUser, newRole: HRRole) => {
     if (user.role === newRole) return;
-    if (!confirm(`تغيير صلاحية ${user.full_name} إلى ${newRole === 'admin' ? 'أدمن' : 'موظف'}؟`)) return;
+    const roleLabel = newRole === 'admin' ? 'أدمن HR' : 'موظف';
+    const ok = await confirm({
+      title: 'تغيير صلاحية الموظف',
+      message: `هل أنت متأكد من تغيير صلاحية ${user.full_name} إلى "${roleLabel}"؟`,
+      confirmText: 'تغيير الصلاحية',
+      variant: 'warning',
+    });
+    if (!ok) return;
 
     const { data, error } = await supabase.functions.invoke('hr-manage-user', {
       body: { action: 'update_role', user_id: user.id, role: newRole },
     });
 
     if (error || !data?.success) {
-      alert(data?.details || data?.error || error?.message || 'فشل تغيير الصلاحية');
+      await showAlert(data?.details || data?.error || error?.message || 'فشل تغيير الصلاحية');
       return;
     }
     await fetchUsers();
+  };
+
+  const handleOpenEdit = (user: HRUser) => {
+    setEditingUser(user);
+    setEditFullName(user.full_name);
+    setEditRole(user.role);
+    setEditIsActive(user.is_active);
+    setEditError(null);
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEditUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser || !editFullName.trim()) return;
+    setEditSubmitting(true);
+    setEditError(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('hr-manage-user', {
+        body: {
+          action: 'edit_user',
+          user_id: editingUser.id,
+          full_name: editFullName.trim(),
+          role: editRole,
+          is_active: editIsActive,
+        },
+      });
+
+      if (error || !data?.success) {
+        const { error: directErr } = await supabase
+          .from('hr_users')
+          .update({
+            full_name: editFullName.trim(),
+            role: editRole,
+            is_active: editIsActive,
+          })
+          .eq('id', editingUser.id);
+        if (directErr) throw directErr;
+      }
+
+      setIsEditModalOpen(false);
+      setEditingUser(null);
+      await fetchUsers();
+    } catch (err: unknown) {
+      setEditError(getErrorMessage(err, 'فشل تعديل بيانات الموظف.'));
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
+  const handleDeleteUser = async (user: HRUser) => {
+    if (signedInUser?.id === user.id) {
+      await showAlert('لا يمكنك حذف حسابك الشخصي المسجل به حالياً.');
+      return;
+    }
+
+    const ok = await confirm({
+      title: 'حذف الموظف نهائياً',
+      message: `تحذير هام: هل أنت متأكد تماماً من حذف الموظف "${user.full_name}" نهائياً؟\nسيتم حذف حسابه وإزالته من كافة المشاريع والمهام التابعة له فوراً.`,
+      confirmText: 'حذف الموظف',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
+    try {
+      const { error: rpcErr } = await supabase.rpc('hr_admin_delete_employee', {
+        p_user_id: user.id,
+      });
+
+      await supabase.functions.invoke('hr-manage-user', {
+        body: { action: 'delete_user', user_id: user.id },
+      });
+
+      if (rpcErr) {
+        const { error: delErr } = await supabase.from('hr_users').delete().eq('id', user.id);
+        if (delErr) throw delErr;
+      }
+
+      await fetchUsers();
+    } catch (err: unknown) {
+      await showAlert(`فشل حذف الموظف: ${getErrorMessage(err)}`);
+    }
+  };
+
+  const handleOpenAssignTask = async (user: HRUser) => {
+    setAssignUser(user);
+    setTaskTitle('');
+    setTaskDesc('');
+    setTaskDueDate('');
+    setTaskError(null);
+    try {
+      const { data } = await supabase.from('hr_projects').select('*').eq('status', 'active').order('name');
+      setProjects((data as HRProject[]) || []);
+      if (data && data.length > 0) setTaskProjectId(data[0].id);
+    } catch (err) {
+      console.error(err);
+    }
+    setIsAssignTaskOpen(true);
+  };
+
+  const handleSaveAssignTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assignUser || !taskProjectId || !taskTitle.trim()) return;
+    setTaskSubmitting(true);
+    setTaskError(null);
+
+    try {
+      await supabase.from('hr_project_members').upsert({
+        project_id: taskProjectId,
+        user_id: assignUser.id,
+      });
+
+      const { error: tErr } = await supabase.from('hr_tasks').insert({
+        project_id: taskProjectId,
+        assignee_id: assignUser.id,
+        title: taskTitle.trim(),
+        description: taskDesc.trim() || null,
+        due_date: taskDueDate ? new Date(taskDueDate).toISOString() : null,
+        status: 'todo',
+        created_by: signedInUser?.id,
+      });
+
+      if (tErr) throw tErr;
+
+      setIsAssignTaskOpen(false);
+      setAssignUser(null);
+      alert(`تم بنجاح إسناد المهمة إلى ${assignUser.full_name}`);
+    } catch (err: unknown) {
+      setTaskError(getErrorMessage(err, 'فشل إسناد المهمة.'));
+    } finally {
+      setTaskSubmitting(false);
+    }
   };
 
   const filteredUsers = users.filter((u) =>
@@ -321,6 +488,39 @@ export const EmployeesList: React.FC = () => {
                     ? 'جاري إنشاء كلمة مؤقتة...'
                     : 'إعادة تعيين كلمة المرور'}
               </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleOpenAssignTask(user)}
+                className="h-9 w-full rounded-xl border-blue-200 bg-blue-50/50 text-blue-700 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300 text-xs flex items-center justify-center gap-1.5"
+              >
+                <PlusSquare className="size-4" />
+                <span>إسناد مهمة للموظف</span>
+              </Button>
+
+              <div className="flex items-center gap-2 pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleOpenEdit(user)}
+                  className="h-8 flex-1 rounded-xl border-slate-200 text-xs text-slate-700 dark:border-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center gap-1"
+                >
+                  <Pencil className="size-3.5" />
+                  <span>تعديل</span>
+                </Button>
+                {signedInUser?.id !== user.id && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleDeleteUser(user)}
+                    className="h-8 flex-1 rounded-xl border-rose-200 text-xs text-rose-600 dark:border-rose-900/50 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center justify-center gap-1"
+                  >
+                    <Trash2 className="size-3.5" />
+                    <span>حذف</span>
+                  </Button>
+                )}
+              </div>
 
               <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
                 <span className="text-[11px]">
@@ -510,6 +710,188 @@ export const EmployeesList: React.FC = () => {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Modal: Edit Employee */}
+      <Modal
+        isOpen={isEditModalOpen}
+        onClose={() => !editSubmitting && setIsEditModalOpen(false)}
+        title="تعديل بيانات الموظف"
+        subtitle={editingUser?.email || undefined}
+      >
+        <form onSubmit={handleSaveEditUser} className="space-y-4 text-right">
+          {editError && (
+            <div className="p-3 rounded-xl bg-rose-50 text-rose-700 text-xs border border-rose-200 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{editError}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              الاسم الكامل *
+            </label>
+            <input
+              type="text"
+              required
+              value={editFullName}
+              onChange={(e) => setEditFullName(e.target.value)}
+              className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              صلاحية الحساب *
+            </label>
+            <Select
+              value={editRole}
+              onValueChange={(val) => val && setEditRole(val as HRRole)}
+              items={{ employee: 'موظف', admin: 'أدمن HR' }}
+            >
+              <SelectTrigger className="h-10 w-full rounded-xl border-slate-200 bg-slate-50 text-xs dark:border-slate-700 dark:bg-slate-800">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start">
+                <SelectItem value="employee">موظف</SelectItem>
+                <SelectItem value="admin">أدمن HR</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              حالة الحساب *
+            </label>
+            <Select
+              value={editIsActive ? 'active' : 'inactive'}
+              onValueChange={(val) => setEditIsActive(val === 'active')}
+              items={{ active: 'حساب نشط ومفعل', inactive: 'حساب معطل وموقوف' }}
+            >
+              <SelectTrigger className="h-10 w-full rounded-xl border-slate-200 bg-slate-50 text-xs dark:border-slate-700 dark:bg-slate-800">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start">
+                <SelectItem value="active">حساب نشط ومفعل</SelectItem>
+                <SelectItem value="inactive">حساب معطل وموقوف</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <button
+              type="button"
+              disabled={editSubmitting}
+              onClick={() => setIsEditModalOpen(false)}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400"
+            >
+              إلغاء
+            </button>
+            <button
+              type="submit"
+              disabled={editSubmitting}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 disabled:opacity-50"
+            >
+              {editSubmitting ? 'جاري الحفظ...' : 'حفظ التعديلات'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal: Assign Task */}
+      <Modal
+        isOpen={isAssignTaskOpen}
+        onClose={() => !taskSubmitting && setIsAssignTaskOpen(false)}
+        title="إسناد مهمة للموظف"
+        subtitle={assignUser ? `إسناد مهمة جديدة لـ ${assignUser.full_name}` : undefined}
+      >
+        <form onSubmit={handleSaveAssignTask} className="space-y-4 text-right">
+          {taskError && (
+            <div className="p-3 rounded-xl bg-rose-50 text-rose-700 text-xs border border-rose-200 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{taskError}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              المشروع *
+            </label>
+            {projects.length === 0 ? (
+              <p className="text-xs text-rose-500">لا توجد مشاريع نشطة حالياً. يرجى إنشاء مشروع أولاً.</p>
+            ) : (
+              <select
+                value={taskProjectId}
+                onChange={(e) => setTaskProjectId(e.target.value)}
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              >
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              عنوان المهمة *
+            </label>
+            <input
+              type="text"
+              required
+              value={taskTitle}
+              onChange={(e) => setTaskTitle(e.target.value)}
+              placeholder="مثال: تجهيز تصميم واجهة المستخدم"
+              className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              تفاصيل المهمة (اختياري)
+            </label>
+            <textarea
+              rows={3}
+              value={taskDesc}
+              onChange={(e) => setTaskDesc(e.target.value)}
+              placeholder="وصف وتوجيهات المهمة للموظف..."
+              className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              تاريخ ووقت الاستحقاق (اختياري)
+            </label>
+            <input
+              type="datetime-local"
+              value={taskDueDate}
+              onChange={(e) => setTaskDueDate(e.target.value)}
+              className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <button
+              type="button"
+              disabled={taskSubmitting}
+              onClick={() => setIsAssignTaskOpen(false)}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400"
+            >
+              إلغاء
+            </button>
+            <button
+              type="submit"
+              disabled={taskSubmitting || projects.length === 0}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 disabled:opacity-50"
+            >
+              {taskSubmitting ? 'جاري الإسناد...' : 'إسناد المهمة'}
+            </button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

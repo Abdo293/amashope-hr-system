@@ -19,8 +19,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     ? [
         { path: '/admin', label: 'لوحة التحكم', icon: LayoutDashboard, end: true },
         { path: '/admin/projects', label: 'إدارة المشاريع', icon: FolderKanban },
+        { path: '/admin/tasks', label: 'إدارة المهام', icon: CheckSquare },
         { path: '/admin/employees', label: 'إدارة الموظفين', icon: Users },
-        { path: '/admin/uploads', label: 'تسليمات اليوم', icon: FileCheck2 },
+        { path: '/admin/uploads', label: 'التسليمات', icon: FileCheck2 },
       ]
     : [
         { path: '/employee', label: 'لوحة التحكم', icon: LayoutDashboard, end: true },

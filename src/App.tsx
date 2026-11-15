@@ -1,6 +1,7 @@
 import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ConfirmProvider } from './context/ConfirmContext';
 import { Layout } from './components/layout/Layout';
 import { Loader2 } from 'lucide-react';
 
@@ -11,6 +12,7 @@ const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard').then((m
 const ProjectsList = lazy(() => import('./pages/admin/ProjectsList').then((module) => ({ default: module.ProjectsList })));
 const ProjectDetail = lazy(() => import('./pages/admin/ProjectDetail').then((module) => ({ default: module.ProjectDetail })));
 const EmployeesList = lazy(() => import('./pages/admin/EmployeesList').then((module) => ({ default: module.EmployeesList })));
+const TasksList = lazy(() => import('./pages/admin/TasksList').then((module) => ({ default: module.TasksList })));
 const DailyUploads = lazy(() => import('./pages/admin/DailyUploads').then((module) => ({ default: module.DailyUploads })));
 const EmployeeDashboard = lazy(() => import('./pages/employee/EmployeeDashboard').then((module) => ({ default: module.EmployeeDashboard })));
 const TaskDetailDrawer = lazy(() => import('./components/tasks/TaskDetailDrawer').then((module) => ({ default: module.TaskDetailDrawer })));
@@ -95,86 +97,96 @@ const PasswordRoute: React.FC = () => {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Suspense fallback={<LoadingScreen />}>
-        <Routes>
-          {/* Public / Guest Routes */}
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/forbidden" element={<ForbiddenPage />} />
-          <Route path="/change-password" element={<PasswordRoute />} />
+      <ConfirmProvider>
+        <BrowserRouter>
+          <Suspense fallback={<LoadingScreen />}>
+          <Routes>
+            {/* Public / Guest Routes */}
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/forbidden" element={<ForbiddenPage />} />
+            <Route path="/change-password" element={<PasswordRoute />} />
 
-          {/* Root Redirect */}
-          <Route path="/" element={<RootRedirect />} />
+            {/* Root Redirect */}
+            <Route path="/" element={<RootRedirect />} />
 
-          {/* Admin Routes */}
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <AdminDashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/projects"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <ProjectsList />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/projects/:id"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <ProjectDetail />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/employees"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <EmployeesList />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/uploads"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <DailyUploads />
-              </ProtectedRoute>
-            }
-          />
+            {/* Admin Routes */}
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <AdminDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/projects"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <ProjectsList />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/projects/:id"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <ProjectDetail />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/tasks"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <TasksList />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/employees"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <EmployeesList />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/uploads"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <DailyUploads />
+                </ProtectedRoute>
+              }
+            />
 
-          {/* Employee Routes */}
-          <Route
-            path="/employee"
-            element={
-              <ProtectedRoute requiredRole="employee">
-                <EmployeeDashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/employee/projects"
-            element={<Navigate to="/employee" replace />}
-          />
-          <Route
-            path="/employee/projects/:id"
-            element={<Navigate to="/employee" replace />}
-          />
-          <Route
-            path="/employee/tasks"
-            element={<Navigate to="/employee" replace />}
-          />
+            {/* Employee Routes */}
+            <Route
+              path="/employee"
+              element={
+                <ProtectedRoute requiredRole="employee">
+                  <EmployeeDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/employee/projects"
+              element={<Navigate to="/employee" replace />}
+            />
+            <Route
+              path="/employee/projects/:id"
+              element={<Navigate to="/employee" replace />}
+            />
+            <Route
+              path="/employee/tasks"
+              element={<Navigate to="/employee" replace />}
+            />
 
-          {/* Fallback Wildcard */}
-          <Route path="*" element={<RootRedirect />} />
-        </Routes>
-        </Suspense>
-      </BrowserRouter>
+            {/* Fallback Wildcard */}
+            <Route path="*" element={<RootRedirect />} />
+          </Routes>
+          </Suspense>
+        </BrowserRouter>
+      </ConfirmProvider>
     </AuthProvider>
   );
 }

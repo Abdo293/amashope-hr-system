@@ -27,10 +27,12 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { getErrorMessage } from '../../lib/utils';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export const TaskDetailDrawer: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const taskId = searchParams.get('taskId');
+  const { confirm, showAlert } = useConfirm();
 
   const { hrUser } = useAuth();
   const [task, setTask] = useState<HRTask | null>(null);
@@ -206,8 +208,37 @@ export const TaskDetailDrawer: React.FC = () => {
       if (error) throw error;
       setEditing(false);
       await fetchTaskDetails();
+      window.dispatchEvent(new CustomEvent('hr:task-updated', { detail: { taskId: task.id } }));
     } catch (error) {
       alert(`فشل تعديل المهمة: ${getErrorMessage(error)}`);
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
+  const handleDeleteTask = async () => {
+    if (!task) return;
+    const ok = await confirm({
+      title: 'حذف المهمة نهائياً',
+      message: `هل أنت متأكد من حذف المهمة "${task.title}" نهائياً؟\nسيتم حذف جميع المرفقات وسجل الأنشطة التابع لها.`,
+      confirmText: 'حذف المهمة',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
+    setStatusUpdating(true);
+    try {
+      const { error: rpcErr } = await supabase.rpc('hr_admin_delete_task', {
+        p_task_id: task.id,
+      });
+      if (rpcErr) {
+        const { error: delErr } = await supabase.from('hr_tasks').delete().eq('id', task.id);
+        if (delErr) throw delErr;
+      }
+      onClose();
+      window.dispatchEvent(new CustomEvent('hr:task-deleted', { detail: { taskId: task.id } }));
+    } catch (err) {
+      await showAlert(`فشل حذف المهمة: ${getErrorMessage(err)}`);
     } finally {
       setStatusUpdating(false);
     }
@@ -218,7 +249,7 @@ export const TaskDetailDrawer: React.FC = () => {
       const url = await getFileDownloadUrl(fileId);
       window.open(url, '_blank');
     } catch (err: unknown) {
-      alert(`فشل التحميل: ${getErrorMessage(err)}`);
+      await showAlert(`فشل التحميل: ${getErrorMessage(err)}`);
     }
   };
 
@@ -228,19 +259,26 @@ export const TaskDetailDrawer: React.FC = () => {
       const url = await getFileDownloadUrl(file.id);
       setPreviewFile({ name: file.original_name, url, mime: file.mime_type });
     } catch (err: unknown) {
-      alert(`فشل المعاينة: ${getErrorMessage(err)}`);
+      await showAlert(`فشل المعاينة: ${getErrorMessage(err)}`);
     } finally {
       setPreviewLoading(null);
     }
   };
 
   const handleDeleteFile = async (fileId: string) => {
-    if (!confirm('هل أنت تأكد من رغبتك في حذف هذا الملف المرفق؟')) return;
+    const ok = await confirm({
+      title: 'حذف الملف المرفق',
+      message: 'هل أنت متأكد من رغبتك في حذف هذا الملف المرفق؟ لا يمكن التراجع عن هذا الإجراء.',
+      confirmText: 'حذف الملف',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
     try {
       await deleteTaskFile(fileId);
       await fetchTaskDetails();
     } catch (err: unknown) {
-      alert(`فشل حذف الملف: ${getErrorMessage(err)}`);
+      await showAlert(`فشل حذف الملف: ${getErrorMessage(err)}`);
     }
   };
 
@@ -425,11 +463,25 @@ export const TaskDetailDrawer: React.FC = () => {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">الوصف والتعليمات</h4>
-              {isAdmin && !isProjectArchived && !editing && (
-                <Button type="button" variant="outline" size="sm" onClick={startEditing}>
-                  <Pencil /> تعديل المهمة
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                {!isProjectArchived && (isAdmin || isAssignee) && !editing && (
+                  <Button type="button" variant="outline" size="sm" onClick={startEditing} className="h-8 gap-1.5 text-xs">
+                    <Pencil className="size-3.5" /> تعديل المهمة
+                  </Button>
+                )}
+                {isAdmin && !isProjectArchived && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDeleteTask}
+                    disabled={statusUpdating}
+                    className="h-8 gap-1.5 text-xs border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-950/30"
+                  >
+                    <Trash2 className="size-3.5" /> حذف المهمة
+                  </Button>
+                )}
+              </div>
             </div>
             {editing ? (
               <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50/40 p-4 dark:border-blue-900 dark:bg-blue-950/20">

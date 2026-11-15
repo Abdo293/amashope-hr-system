@@ -6,23 +6,34 @@ import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { TableSkeleton } from '../../components/ui/Skeleton';
 import { useNavigate } from 'react-router-dom';
-import { FolderKanban, Plus, Search, Archive, ArchiveRestore, ArrowLeft } from 'lucide-react';
+import { FolderKanban, Plus, Search, Archive, ArchiveRestore, ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import { getErrorMessage } from '../../lib/utils';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export const ProjectsList: React.FC = () => {
   const navigate = useNavigate();
   const { hrUser } = useAuth();
+  const { confirm, showAlert } = useConfirm();
   const [projects, setProjects] = useState<HRProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | ProjectStatus>('all');
 
-  // Modal State
+  // New Project Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Edit Project Modal State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<HRProject | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editStatus, setEditStatus] = useState<ProjectStatus>('active');
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editFormError, setEditFormError] = useState<string | null>(null);
 
   const fetchProjects = useCallback(async () => {
     setLoading(true);
@@ -88,7 +99,13 @@ export const ProjectsList: React.FC = () => {
     const newStatus = project.status === 'active' ? 'archived' : 'active';
     const actionText = newStatus === 'archived' ? 'أرشفة' : 'إعادة تفعيل';
 
-    if (!confirm(`هل أنت تأكد من رغبتك في ${actionText} مشروع "${project.name}"؟`)) return;
+    const ok = await confirm({
+      title: newStatus === 'archived' ? 'أرشفة المشروع' : 'إعادة تفعيل المشروع',
+      message: `هل أنت متأكد من رغبتك في ${actionText} مشروع "${project.name}"؟`,
+      confirmText: actionText,
+      variant: 'warning',
+    });
+    if (!ok) return;
 
     try {
       const { error } = await supabase
@@ -99,7 +116,73 @@ export const ProjectsList: React.FC = () => {
       if (error) throw error;
       await fetchProjects();
     } catch (err: unknown) {
-      alert(`فشل ${actionText} المشروع: ${getErrorMessage(err)}`);
+      await showAlert(`فشل ${actionText} المشروع: ${getErrorMessage(err)}`);
+    }
+  };
+
+  const handleOpenEdit = (project: HRProject, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingProject(project);
+    setEditName(project.name);
+    setEditDescription(project.description || '');
+    setEditStatus(project.status);
+    setEditFormError(null);
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEditProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProject || !editName.trim()) return;
+    setEditSubmitting(true);
+    setEditFormError(null);
+
+    try {
+      const { error } = await supabase
+        .from('hr_projects')
+        .update({
+          name: editName.trim(),
+          description: editDescription.trim() || null,
+          status: editStatus,
+        })
+        .eq('id', editingProject.id);
+
+      if (error) throw error;
+      setIsEditModalOpen(false);
+      setEditingProject(null);
+      await fetchProjects();
+    } catch (err: unknown) {
+      setEditFormError(getErrorMessage(err, 'فشل تعديل المشروع.'));
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
+  const handleDeleteProject = async (project: HRProject, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const ok = await confirm({
+      title: 'حذف المشروع نهائياً',
+      message: `هل أنت متأكد تماماً من حذف مشروع "${project.name}" نهائياً؟\nسيتم حذف جميع المهام والملفات التابعة له فوراً.`,
+      confirmText: 'حذف المشروع',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
+    try {
+      const { error: rpcError } = await supabase.rpc('hr_admin_delete_project', {
+        p_project_id: project.id,
+      });
+
+      if (rpcError) {
+        const { error: directError } = await supabase
+          .from('hr_projects')
+          .delete()
+          .eq('id', project.id);
+        if (directError) throw directError;
+      }
+
+      await fetchProjects();
+    } catch (err: unknown) {
+      await showAlert(`فشل حذف المشروع: ${getErrorMessage(err)}`);
     }
   };
 
@@ -203,6 +286,14 @@ export const ProjectsList: React.FC = () => {
 
                 <div className="flex items-center gap-1">
                   <button
+                    onClick={(e) => handleOpenEdit(project, e)}
+                    title="تعديل المشروع"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+
+                  <button
                     onClick={(e) => handleToggleArchive(project, e)}
                     title={project.status === 'active' ? 'أرشفة المشروع' : 'إعادة تفعيل المشروع'}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors"
@@ -212,6 +303,14 @@ export const ProjectsList: React.FC = () => {
                     ) : (
                       <ArchiveRestore className="w-4 h-4" />
                     )}
+                  </button>
+
+                  <button
+                    onClick={(e) => handleDeleteProject(project, e)}
+                    title="حذف المشروع نهائياً"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
                   </button>
 
                   <ArrowLeft className="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-blue-500 group-hover:-translate-x-0.5 transition-all" />
@@ -277,6 +376,100 @@ export const ProjectsList: React.FC = () => {
               className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 disabled:opacity-50"
             >
               {submitting ? 'جاري الإنشاء...' : 'إنشاء المشروع'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Edit Project Modal */}
+      <Modal
+        isOpen={isEditModalOpen}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setEditingProject(null);
+        }}
+        title="تعديل المشروع"
+        subtitle={editingProject ? `تعديل بيانات مشروع: ${editingProject.name}` : ''}
+      >
+        <form onSubmit={handleSaveEditProject} className="space-y-4 text-right">
+          {editFormError && (
+            <div className="p-3 rounded-xl bg-rose-50 text-rose-700 text-xs border border-rose-200">
+              {editFormError}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              اسم المشروع *
+            </label>
+            <input
+              type="text"
+              required
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              وصف المشروع
+            </label>
+            <textarea
+              rows={3}
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              حالة المشروع
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setEditStatus('active')}
+                className={`flex-1 py-2 text-xs font-bold rounded-xl border transition-all ${
+                  editStatus === 'active'
+                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 shadow-sm'
+                    : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                نشط
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditStatus('archived')}
+                className={`flex-1 py-2 text-xs font-bold rounded-xl border transition-all ${
+                  editStatus === 'archived'
+                    ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 shadow-sm'
+                    : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                مؤرشف
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setIsEditModalOpen(false);
+                setEditingProject(null);
+              }}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              إلغاء
+            </button>
+            <button
+              type="submit"
+              disabled={editSubmitting}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 disabled:opacity-50"
+            >
+              {editSubmitting ? 'جاري الحفظ...' : 'حفظ التعديلات'}
             </button>
           </div>
         </form>

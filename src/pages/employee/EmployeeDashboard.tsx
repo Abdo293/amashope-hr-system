@@ -53,6 +53,13 @@ export const EmployeeDashboard: React.FC = () => {
 
   useEffect(() => {
     fetchEmployeeData();
+    const handleUpdate = () => fetchEmployeeData();
+    window.addEventListener('hr:task-updated', handleUpdate);
+    window.addEventListener('hr:task-deleted', handleUpdate);
+    return () => {
+      window.removeEventListener('hr:task-updated', handleUpdate);
+      window.removeEventListener('hr:task-deleted', handleUpdate);
+    };
   }, [fetchEmployeeData]);
 
   const todoTasks = assignedTasks.filter((t) => t.status === 'todo');

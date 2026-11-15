@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Circle, KeyRound, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
@@ -43,6 +43,15 @@ export const ChangePasswordPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current) {
+        clearTimeout(redirectTimerRef.current);
+      }
+    };
+  }, []);
 
   const destination = hrUser?.role === 'admin' ? '/admin' : '/employee';
   const passwordRules = [
@@ -93,8 +102,14 @@ export const ChangePasswordPage: React.FC = () => {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmation('');
-      await refreshProfile();
+
+      const updatedProfile = await refreshProfile();
+      const targetDestination = (updatedProfile?.role || hrUser?.role) === 'admin' ? '/admin' : '/employee';
       setDone(true);
+
+      redirectTimerRef.current = setTimeout(() => {
+        navigate(targetDestination, { replace: true });
+      }, 1500);
     } catch (changeError: unknown) {
       setError(getErrorMessage(changeError, 'فشل تغيير كلمة المرور.'));
     } finally {
@@ -109,11 +124,19 @@ export const ChangePasswordPage: React.FC = () => {
           <div className="space-y-5 text-center">
             <CheckCircle2 className="mx-auto size-12 text-emerald-400" />
             <div>
-              <h1 className="text-xl font-black text-white">تم تغيير كلمة المرور</h1>
-              <p className="mt-2 text-xs text-slate-400">يمكنك الآن استخدام كلمة المرور الجديدة لتسجيل الدخول.</p>
+              <h1 className="text-xl font-black text-white">تم تغيير كلمة المرور بنجاح</h1>
+              <p className="mt-2 text-xs text-slate-400">
+                تم حفظ كلمة المرور الجديدة، جاري تحويلك إلى النظام تلقائيًا...
+              </p>
             </div>
-            <Button onClick={() => navigate(destination, { replace: true })} className="h-11 w-full rounded-xl bg-blue-600 text-white hover:bg-blue-500">
-              الدخول إلى النظام
+            <Button
+              onClick={() => {
+                if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+                navigate(destination, { replace: true });
+              }}
+              className="h-11 w-full rounded-xl bg-blue-600 text-white hover:bg-blue-500"
+            >
+              الدخول إلى النظام الآن
             </Button>
           </div>
         ) : (

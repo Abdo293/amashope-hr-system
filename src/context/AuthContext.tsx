@@ -10,7 +10,7 @@ interface AuthContextType {
   loading: boolean;
   isForbidden: boolean;
   logout: () => Promise<void>;
-  refreshProfile: () => Promise<void>;
+  refreshProfile: () => Promise<HRUser | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -22,6 +22,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState<boolean>(true);
   const [isForbidden, setIsForbidden] = useState<boolean>(false);
   const authRequestId = useRef(0);
+  const activeUserId = useRef<string | null>(null);
+  const resolvedProfileUserId = useRef<string | null>(null);
 
   const fetchHRProfile = useCallback(async (userId: string, userEmail?: string) => {
     try {
@@ -55,14 +57,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const applySession = useCallback(async (nextSession: Session | null) => {
-    const requestId = ++authRequestId.current;
-    setLoading(true);
+    const nextUserId = nextSession?.user.id || null;
+    const canReuseResolvedProfile = Boolean(
+      nextUserId &&
+      activeUserId.current === nextUserId &&
+      resolvedProfileUserId.current === nextUserId,
+    );
+
+    activeUserId.current = nextUserId;
     setSession(nextSession);
     setUser(nextSession?.user || null);
+
+    // Supabase may emit SIGNED_IN/TOKEN_REFRESHED again when a hidden tab
+    // becomes active. Keep the already-authorized profile so the protected
+    // route does not flash its full-page loading screen on every tab focus.
+    if (canReuseResolvedProfile) return;
+
+    const requestId = ++authRequestId.current;
+    setLoading(true);
     setHrUser(null);
     setIsForbidden(false);
 
     if (!nextSession?.user) {
+      resolvedProfileUserId.current = null;
       if (requestId === authRequestId.current) setLoading(false);
       return;
     }
@@ -72,6 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setHrUser(result.profile);
     setIsForbidden(result.forbidden);
+    resolvedProfileUserId.current = nextSession.user.id;
     setLoading(false);
   }, [fetchHRProfile]);
 
@@ -104,11 +122,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await applySession(null);
   };
 
-  const refreshProfile = async () => {
-    if (session?.user) {
-      await applySession(session);
+  const refreshProfile = useCallback(async (): Promise<HRUser | null> => {
+    const currentSession = session || (await supabase.auth.getSession()).data.session;
+    if (!currentSession?.user) return null;
+
+    const result = await fetchHRProfile(currentSession.user.id, currentSession.user.email);
+    setHrUser(result.profile);
+    setIsForbidden(result.forbidden);
+    if (result.profile) {
+      resolvedProfileUserId.current = currentSession.user.id;
+      activeUserId.current = currentSession.user.id;
     }
-  };
+    return result.profile;
+  }, [fetchHRProfile, session]);
 
   return (
     <AuthContext.Provider
