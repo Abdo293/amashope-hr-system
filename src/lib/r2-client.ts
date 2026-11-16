@@ -68,6 +68,9 @@ export async function uploadFileToR2(
 
   // 1. Get Presigned Upload URL from Edge Function
   const { data: presignedData, error: presignedErr } = await supabase.functions.invoke('hr-r2-storage', {
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+    },
     body: {
       action: 'get_upload_url',
       task_id: taskId,
@@ -80,19 +83,23 @@ export async function uploadFileToR2(
   if (presignedErr || !presignedData?.upload_url) {
     const errorMsg =
       presignedData?.details ||
-      (presignedData?.error === 'FORBIDDEN_EMPLOYEE_UPLOADS_ONLY'
+      (presignedData?.error === 'UNAUTHORIZED'
+        ? 'انتهت جلسة تسجيل الدخول أو غير مصرح لك. سجّل الدخول مرة أخرى.'
+        : presignedData?.error === 'FORBIDDEN_EMPLOYEE_UPLOADS_ONLY'
         ? 'رفع ملفات التنفيذ متاح للموظف المسند إليه المهمة فقط.'
         : presignedData?.error === 'FORBIDDEN_TASK_NOT_ASSIGNED'
           ? 'لا يمكنك رفع ملفات لهذه المهمة لأنها غير مسندة إليك.'
-          : presignedData?.error === 'PROJECT_ARCHIVED_OR_INVALID'
-            ? 'لا يمكن رفع ملفات لأن المشروع غير نشط.'
-            : presignedData?.error === 'FILE_SIZE_EXCEEDED'
-              ? 'حجم الملف أكبر من الحد المسموح.'
-              : presignedData?.error === 'MIME_TYPE_NOT_ALLOWED' ||
-                presignedData?.error === 'FILE_EXTENSION_FORBIDDEN' ||
-                presignedData?.error === 'FILE_EXTENSION_MIME_MISMATCH'
-                ? 'نوع الملف غير مسموح به.'
-                : 'تعذّر تجهيز رفع الملف. حاول مرة أخرى.');
+          : presignedData?.error === 'FORBIDDEN_NOT_PROJECT_MEMBER'
+            ? 'غير مسموح برفع ملفات لأنك لست عضوًا في هذا المشروع.'
+            : presignedData?.error === 'PROJECT_ARCHIVED_OR_INVALID'
+              ? 'لا يمكن رفع ملفات لأن المشروع غير نشط.'
+              : presignedData?.error === 'FILE_SIZE_EXCEEDED'
+                ? 'حجم الملف أكبر من الحد المسموح.'
+                : presignedData?.error === 'MIME_TYPE_NOT_ALLOWED' ||
+                  presignedData?.error === 'FILE_EXTENSION_FORBIDDEN' ||
+                  presignedData?.error === 'FILE_EXTENSION_MIME_MISMATCH'
+                  ? 'نوع الملف غير مسموح به.'
+                  : 'تعذّر تجهيز رفع الملف. حاول مرة أخرى.');
     throw new Error(errorMsg);
   }
 
@@ -133,6 +140,9 @@ export async function uploadFileToR2(
 
     // 3. Let the server verify R2 and atomically publish the metadata.
     const { data: completed, error: completeErr } = await supabase.functions.invoke('hr-r2-storage', {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
       body: { action: 'complete_upload', file_id },
     });
 
@@ -146,6 +156,9 @@ export async function uploadFileToR2(
     // an untracked object behind.
     try {
       await supabase.functions.invoke('hr-r2-storage', {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: { action: 'delete_file', file_id },
       });
     } catch (cleanupErr) {
@@ -159,7 +172,11 @@ export async function uploadFileToR2(
  * Retrieves a short-lived Presigned Download URL for a task file.
  */
 export async function getFileDownloadUrl(fileId: string): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined;
+
   const { data, error } = await supabase.functions.invoke('hr-r2-storage', {
+    headers,
     body: {
       action: 'get_download_url',
       file_id: fileId,
@@ -177,7 +194,11 @@ export async function getFileDownloadUrl(fileId: string): Promise<string> {
  * Deletes a file from Cloudflare R2 and removes its database record.
  */
 export async function deleteTaskFile(fileId: string): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined;
+
   const { data, error } = await supabase.functions.invoke('hr-r2-storage', {
+    headers,
     body: {
       action: 'delete_file',
       file_id: fileId,

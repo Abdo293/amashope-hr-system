@@ -36,7 +36,7 @@ async function readFunctionError(error: unknown, data: unknown) {
 
 export const ChangePasswordPage: React.FC = () => {
   const navigate = useNavigate();
-  const { hrUser, refreshProfile, logout } = useAuth();
+  const { user, hrUser, refreshProfile, logout } = useAuth();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -97,6 +97,15 @@ export const ChangePasswordPage: React.FC = () => {
 
       if (invokeError || !data?.success) {
         throw new Error(await readFunctionError(invokeError, data));
+      }
+
+      // Re-authenticate session with the new password so JWT is fresh and valid
+      const emailToLogin = user?.email || hrUser?.email;
+      if (emailToLogin) {
+        await supabase.auth.signInWithPassword({
+          email: emailToLogin,
+          password: newPassword,
+        });
       }
 
       setCurrentPassword('');
