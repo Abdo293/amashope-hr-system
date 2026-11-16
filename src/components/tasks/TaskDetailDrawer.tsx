@@ -421,7 +421,7 @@ export const TaskDetailDrawer: React.FC = () => {
                 onChange={handleFileUpload}
                 disabled={uploading}
                 className="hidden"
-                accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,video/mp4,video/webm,video/quicktime,text/csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip"
+                accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,video/mp4,video/webm,video/quicktime,text/csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,application/zip,application/x-zip-compressed,application/x-zip"
               />
               <label htmlFor="task-file-input" className="flex cursor-pointer flex-col items-center justify-center gap-2">
                 <span className="flex size-11 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-600/20">
