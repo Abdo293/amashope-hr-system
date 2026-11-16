@@ -142,6 +142,9 @@ export const ChangePasswordPage: React.FC = () => {
         ) : (
           <form onSubmit={handleSubmit} noValidate className="space-y-5">
             <div className="text-center">
+              <div className="mb-4 flex justify-center">
+                <img src="/logo.webp" alt="AmaShope" className="h-10 w-auto object-contain" />
+              </div>
               <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-blue-600/15 text-blue-400">
                 <KeyRound className="size-6" />
               </div>

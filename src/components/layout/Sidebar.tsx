@@ -32,7 +32,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const content = (
     <div className="flex flex-col h-full py-4 px-3">
       <div className="px-3 mb-5 flex items-center justify-between">
-        <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+        <img src="/logo.webp" alt="AmaShope" className="h-6 w-auto object-contain md:hidden" />
+        <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 hidden md:inline">
           قائمة التنقل
         </span>
         {onCloseMobile && (

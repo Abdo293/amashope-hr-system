@@ -42,10 +42,12 @@ export const LoginPage: React.FC = () => {
       <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl" />
 
       <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10">
-        <div className="flex justify-center">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-xl shadow-blue-500/20">
-            HR
-          </div>
+        <div className="flex justify-center mb-2">
+          <img
+            src="/logo.webp"
+            alt="AmaShope"
+            className="h-12 w-auto object-contain drop-shadow-md"
+          />
         </div>
         <h2 className="mt-4 text-center text-2xl font-black tracking-tight text-white">
           نظام الموارد البشرية

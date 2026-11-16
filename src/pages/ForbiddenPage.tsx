@@ -14,6 +14,9 @@ export const ForbiddenPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 font-sans" dir="rtl">
+      <div className="mb-6">
+        <img src="/logo.webp" alt="AmaShope" className="h-10 w-auto object-contain" />
+      </div>
       <div className="glass-panel p-8 rounded-3xl max-w-md w-full text-center space-y-4 border border-rose-900/50 shadow-2xl">
         <div className="w-16 h-16 rounded-2xl bg-rose-950/60 text-rose-500 flex items-center justify-center mx-auto border border-rose-800/60">
           <ShieldAlert className="w-8 h-8" />
