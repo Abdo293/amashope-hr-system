@@ -21,6 +21,7 @@ import {
   AlertCircle,
   ExternalLink,
   RefreshCw,
+  Users,
 } from 'lucide-react';
 import { getErrorMessage } from '../../lib/utils';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -33,6 +34,7 @@ export const TasksList: React.FC = () => {
   const [tasks, setTasks] = useState<HRTask[]>([]);
   const [projects, setProjects] = useState<HRProject[]>([]);
   const [employees, setEmployees] = useState<HRUser[]>([]);
+  const [projectMembers, setProjectMembers] = useState<{ [projectId: string]: HRUser[] }>({});
   const [loading, setLoading] = useState(true);
 
   // Filters
@@ -44,7 +46,7 @@ export const TasksList: React.FC = () => {
   // Modal: Create Task
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createProjectId, setCreateProjectId] = useState('');
-  const [createAssigneeId, setCreateAssigneeId] = useState('');
+  const [createAssigneeIds, setCreateAssigneeIds] = useState<string[]>([]);
   const [createTitle, setCreateTitle] = useState('');
   const [createDescription, setCreateDescription] = useState('');
   const [createDueDate, setCreateDueDate] = useState('');
@@ -56,18 +58,20 @@ export const TasksList: React.FC = () => {
   const [editingTask, setEditingTask] = useState<HRTask | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
-  const [editAssigneeId, setEditAssigneeId] = useState('');
+  const [editAssigneeIds, setEditAssigneeIds] = useState<string[]>([]);
   const [editDueDate, setEditDueDate] = useState('');
   const [editStatus, setEditStatus] = useState<TaskStatus>('todo');
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
   // Load dropdown options (projects and employees)
+  // Load dropdown options (projects, employees, and project memberships)
   const loadOptions = useCallback(async () => {
     try {
-      const [projRes, empRes] = await Promise.all([
+      const [projRes, empRes, memberRes] = await Promise.all([
         supabase.from('hr_projects').select('*').order('name'),
         supabase.from('hr_users').select('*').eq('is_active', true).order('full_name'),
+        supabase.from('hr_project_members').select('project_id, user_id, hr_users(*)'),
       ]);
       if (projRes.data) {
         setProjects(projRes.data as HRProject[]);
@@ -78,14 +82,22 @@ export const TasksList: React.FC = () => {
       }
       if (empRes.data) {
         setEmployees(empRes.data as HRUser[]);
-        if (empRes.data.length > 0 && !createAssigneeId) {
-          setCreateAssigneeId(empRes.data[0].id);
+      }
+      if (memberRes.data) {
+        const map: { [projectId: string]: HRUser[] } = {};
+        for (const row of memberRes.data) {
+          if (row.hr_users) {
+            const user = row.hr_users as unknown as HRUser;
+            if (!map[row.project_id]) map[row.project_id] = [];
+            map[row.project_id].push(user);
+          }
         }
+        setProjectMembers(map);
       }
     } catch (err) {
       console.error('Failed to load options:', err);
     }
-  }, [createProjectId, createAssigneeId]);
+  }, [createProjectId]);
 
   // Fetch all tasks
   const fetchTasks = useCallback(async () => {
@@ -96,7 +108,8 @@ export const TasksList: React.FC = () => {
         .select(`
           *,
           hr_users:hr_users!hr_tasks_assignee_id_fkey(*),
-          hr_projects:project_id(*)
+          hr_projects:project_id(*),
+          hr_task_assignees(user_id, hr_users:hr_users!hr_task_assignees_user_id_fkey(*))
         `)
         .order('created_at', { ascending: false });
 
@@ -105,9 +118,6 @@ export const TasksList: React.FC = () => {
       }
       if (projectFilter !== 'all') {
         query = query.eq('project_id', projectFilter);
-      }
-      if (employeeFilter !== 'all') {
-        query = query.eq('assignee_id', employeeFilter);
       }
 
       const { data, error } = await query;
@@ -118,7 +128,7 @@ export const TasksList: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, projectFilter, employeeFilter]);
+  }, [statusFilter, projectFilter]);
 
   useEffect(() => {
     void loadOptions();
@@ -146,34 +156,47 @@ export const TasksList: React.FC = () => {
     setCreateDescription('');
     setCreateDueDate('');
     setCreateError(null);
+    const initialProjectId = createProjectId || (projects.find((p) => p.status === 'active')?.id) || (projects[0]?.id || '');
+    setCreateProjectId(initialProjectId);
+    const members = projectMembers[initialProjectId] || [];
+    setCreateAssigneeIds(members.length > 0 ? [members[0].id] : []);
     setIsCreateModalOpen(true);
   };
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!createProjectId || !createAssigneeId || !createTitle.trim()) return;
+    if (!createProjectId || !createTitle.trim()) return;
+    if (createAssigneeIds.length === 0) {
+      setCreateError('يرجى اختيار موظف واحد على الأقل للمهمة');
+      return;
+    }
 
     setCreateSubmitting(true);
     setCreateError(null);
 
     try {
-      // Ensure assignee is member of project
-      await supabase.from('hr_project_members').upsert({
-        project_id: createProjectId,
-        user_id: createAssigneeId,
-      });
-
-      const { error } = await supabase.from('hr_tasks').insert({
-        project_id: createProjectId,
-        assignee_id: createAssigneeId,
-        title: createTitle.trim(),
-        description: createDescription.trim() || null,
-        due_date: createDueDate ? new Date(createDueDate).toISOString() : null,
-        status: 'todo',
-        created_by: signedInUser?.id,
-      });
+      const { data: newTask, error } = await supabase
+        .from('hr_tasks')
+        .insert({
+          project_id: createProjectId,
+          assignee_id: createAssigneeIds[0] || null,
+          title: createTitle.trim(),
+          description: createDescription.trim() || null,
+          due_date: createDueDate ? new Date(createDueDate).toISOString() : null,
+          status: 'todo',
+          created_by: signedInUser?.id,
+        })
+        .select()
+        .single();
 
       if (error) throw error;
+
+      if (newTask && createAssigneeIds.length > 0) {
+        await supabase.rpc('hr_set_task_assignees', {
+          p_task_id: newTask.id,
+          p_user_ids: createAssigneeIds,
+        });
+      }
 
       setIsCreateModalOpen(false);
       await fetchTasks();
@@ -189,7 +212,8 @@ export const TasksList: React.FC = () => {
     setEditingTask(task);
     setEditTitle(task.title);
     setEditDescription(task.description || '');
-    setEditAssigneeId(task.assignee_id || '');
+    const currentAssigneeIds = task.hr_task_assignees?.map((a) => a.user_id) || (task.assignee_id ? [task.assignee_id] : []);
+    setEditAssigneeIds(currentAssigneeIds);
     setEditStatus(task.status);
     setEditDueDate(task.due_date ? new Date(task.due_date).toISOString().slice(0, 16) : '');
     setEditError(null);
@@ -199,30 +223,32 @@ export const TasksList: React.FC = () => {
   const handleSaveEditTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTask || !editTitle.trim()) return;
+    if (editAssigneeIds.length === 0) {
+      setEditError('يرجى اختيار موظف واحد على الأقل للمهمة');
+      return;
+    }
 
     setEditSubmitting(true);
     setEditError(null);
 
     try {
-      if (editAssigneeId && editAssigneeId !== editingTask.assignee_id) {
-        await supabase.from('hr_project_members').upsert({
-          project_id: editingTask.project_id,
-          user_id: editAssigneeId,
-        });
-      }
-
       const { error } = await supabase
         .from('hr_tasks')
         .update({
           title: editTitle.trim(),
           description: editDescription.trim() || null,
-          assignee_id: editAssigneeId || null,
+          assignee_id: editAssigneeIds[0] || null,
           status: editStatus,
           due_date: editDueDate ? new Date(editDueDate).toISOString() : null,
         })
         .eq('id', editingTask.id);
 
       if (error) throw error;
+
+      await supabase.rpc('hr_set_task_assignees', {
+        p_task_id: editingTask.id,
+        p_user_ids: editAssigneeIds,
+      });
 
       setIsEditModalOpen(false);
       setEditingTask(null);
@@ -260,18 +286,32 @@ export const TasksList: React.FC = () => {
     }
   };
 
-  // Filtered tasks in memory by search query
+  // Filtered tasks in memory by search query and employee filter
   const filteredTasks = useMemo(() => {
-    if (!search.trim()) return tasks;
+    let result = tasks;
+    if (employeeFilter !== 'all') {
+      result = result.filter(
+        (t) =>
+          t.assignee_id === employeeFilter ||
+          Boolean(t.hr_task_assignees?.some((a) => a.user_id === employeeFilter))
+      );
+    }
+    if (!search.trim()) return result;
     const q = search.toLowerCase().trim();
-    return tasks.filter(
-      (t) =>
+    return result.filter((t) => {
+      const assigneeNames = (
+        t.hr_task_assignees?.map((a) => a.hr_users?.full_name).filter(Boolean) || [t.hr_users?.full_name]
+      )
+        .join(' ')
+        .toLowerCase();
+      return (
         t.title.toLowerCase().includes(q) ||
         (t.description && t.description.toLowerCase().includes(q)) ||
-        (t.hr_users?.full_name && t.hr_users.full_name.toLowerCase().includes(q)) ||
-        (t.hr_projects?.name && t.hr_projects.name.toLowerCase().includes(q))
-    );
-  }, [tasks, search]);
+        (t.hr_projects?.name && t.hr_projects.name.toLowerCase().includes(q)) ||
+        assigneeNames.includes(q)
+      );
+    });
+  }, [tasks, search, employeeFilter]);
 
   const todoCount = tasks.filter((t) => t.status === 'todo').length;
   const inProgressCount = tasks.filter((t) => t.status === 'in_progress').length;
@@ -477,14 +517,35 @@ export const TasksList: React.FC = () => {
                 )}
 
                 <div className="space-y-1.5 pt-1 text-xs text-slate-500 dark:text-slate-400">
-                  <div className="flex items-center gap-2">
-                    <div className="size-6 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
-                      {task.hr_users?.full_name?.charAt(0) || 'م'}
-                    </div>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
-                      {task.hr_users?.full_name || 'غير مسندة'}
-                    </span>
-                  </div>
+                  {(() => {
+                    const assignees =
+                      (task.hr_task_assignees?.map((a) => a.hr_users).filter(Boolean) as HRUser[]) ||
+                      (task.hr_users ? [task.hr_users] : []);
+                    return (
+                      <div className="flex items-center gap-2">
+                        {assignees.length > 0 ? (
+                          <>
+                            <div className="flex -space-x-1.5 overflow-hidden shrink-0">
+                              {assignees.slice(0, 3).map((u, i) => (
+                                <div
+                                  key={u.id || i}
+                                  title={u.full_name}
+                                  className="size-6 rounded-full bg-blue-600 ring-2 ring-white dark:ring-slate-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0"
+                                >
+                                  {u.full_name?.charAt(0) || 'م'}
+                                </div>
+                              ))}
+                            </div>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                              {assignees.map((u) => u.full_name).join('، ')}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-slate-400 font-semibold">غير مسندة</span>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {task.due_date && (
                     <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
@@ -556,7 +617,12 @@ export const TasksList: React.FC = () => {
             </label>
             <select
               value={createProjectId}
-              onChange={(e) => setCreateProjectId(e.target.value)}
+              onChange={(e) => {
+                const newProjId = e.target.value;
+                setCreateProjectId(newProjId);
+                const mems = projectMembers[newProjId] || [];
+                setCreateAssigneeIds(mems.length > 0 ? [mems[0].id] : []);
+              }}
               className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             >
@@ -569,21 +635,70 @@ export const TasksList: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              الموظف المسند إليه *
-            </label>
-            <select
-              value={createAssigneeId}
-              onChange={(e) => setCreateAssigneeId(e.target.value)}
-              className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            >
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.full_name} ({emp.role === 'admin' ? 'أدمن' : 'موظف'})
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                <Users className="size-3.5 text-blue-600" />
+                <span>الموظفون المسند إليهم المهمة *</span>
+              </label>
+              {(projectMembers[createProjectId] || []).length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const mems = projectMembers[createProjectId] || [];
+                    if (createAssigneeIds.length === mems.length) {
+                      setCreateAssigneeIds([]);
+                    } else {
+                      setCreateAssigneeIds(mems.map((m) => m.id));
+                    }
+                  }}
+                  className="text-[11px] font-bold text-blue-600 hover:text-blue-500 cursor-pointer"
+                >
+                  {createAssigneeIds.length === (projectMembers[createProjectId] || []).length
+                    ? 'إلغاء تحديد الكل'
+                    : 'تحديد جميع أعضاء المشروع'}
+                </button>
+              )}
+            </div>
+
+            {!(projectMembers[createProjectId] && projectMembers[createProjectId].length > 0) ? (
+              <p className="text-xs text-rose-500 bg-rose-50 dark:bg-rose-950/40 p-2.5 rounded-xl border border-rose-200 dark:border-rose-900">
+                لا يوجد أعضاء في هذا المشروع! يرجى إضافة أعضاء للمشروع أولاً قبل إنشاء المهام.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                {(projectMembers[createProjectId] || []).map((emp) => {
+                  const isSelected = createAssigneeIds.includes(emp.id);
+                  return (
+                    <label
+                      key={emp.id}
+                      className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer border transition-all text-xs select-none ${
+                        isSelected
+                          ? 'bg-blue-50/80 border-blue-500/80 text-blue-900 dark:bg-blue-950/40 dark:border-blue-700 dark:text-blue-200 shadow-xs'
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {
+                          if (isSelected) {
+                            setCreateAssigneeIds(createAssigneeIds.filter((id) => id !== emp.id));
+                          } else {
+                            setCreateAssigneeIds([...createAssigneeIds, emp.id]);
+                          }
+                        }}
+                        className="size-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500"
+                      />
+                      <div className="size-6 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                        {emp.full_name?.charAt(0) || 'م'}
+                      </div>
+                      <span className="font-semibold truncate flex-1">{emp.full_name}</span>
+                      <span className="text-[10px] text-slate-400">({emp.role === 'admin' ? 'أدمن' : 'موظف'})</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div>
@@ -674,21 +789,70 @@ export const TasksList: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              الموظف المسند إليه
-            </label>
-            <select
-              value={editAssigneeId}
-              onChange={(e) => setEditAssigneeId(e.target.value)}
-              className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">بدون إسناد</option>
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.full_name}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                الموظفون المسند إليهم المهمة *
+              </label>
+              {editingTask && (projectMembers[editingTask.project_id] || []).length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const mems = projectMembers[editingTask.project_id] || [];
+                    if (editAssigneeIds.length === mems.length) {
+                      setEditAssigneeIds([]);
+                    } else {
+                      setEditAssigneeIds(mems.map((m) => m.id));
+                    }
+                  }}
+                  className="text-[11px] font-bold text-blue-600 hover:text-blue-500 cursor-pointer"
+                >
+                  {editingTask && editAssigneeIds.length === (projectMembers[editingTask.project_id] || []).length
+                    ? 'إلغاء تحديد الكل'
+                    : 'تحديد جميع أعضاء المشروع'}
+                </button>
+              )}
+            </div>
+
+            {editingTask && !(projectMembers[editingTask.project_id] && projectMembers[editingTask.project_id].length > 0) ? (
+              <p className="text-xs text-rose-500 bg-rose-50 dark:bg-rose-950/40 p-2.5 rounded-xl border border-rose-200 dark:border-rose-900">
+                لا يوجد أعضاء في هذا المشروع!
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                {editingTask &&
+                  (projectMembers[editingTask.project_id] || []).map((emp) => {
+                    const isSelected = editAssigneeIds.includes(emp.id);
+                    return (
+                      <label
+                        key={emp.id}
+                        className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer border transition-all text-xs select-none ${
+                          isSelected
+                            ? 'bg-blue-50/80 border-blue-500/80 text-blue-900 dark:bg-blue-950/40 dark:border-blue-700 dark:text-blue-200 shadow-xs'
+                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            if (isSelected) {
+                              setEditAssigneeIds(editAssigneeIds.filter((id) => id !== emp.id));
+                            } else {
+                              setEditAssigneeIds([...editAssigneeIds, emp.id]);
+                            }
+                          }}
+                          className="size-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500"
+                        />
+                        <div className="size-6 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                          {emp.full_name?.charAt(0) || 'م'}
+                        </div>
+                        <span className="font-semibold truncate flex-1">{emp.full_name}</span>
+                        <span className="text-[10px] text-slate-400">({emp.role === 'admin' ? 'أدمن' : 'موظف'})</span>
+                      </label>
+                    );
+                  })}
+              </div>
+            )}
           </div>
 
           <div>

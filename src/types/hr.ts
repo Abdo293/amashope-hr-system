@@ -36,12 +36,20 @@ export interface HRProjectMember {
 
 export type TaskStatus = 'todo' | 'in_progress' | 'done';
 
+export interface HRTaskAssignee {
+  task_id: string;
+  user_id: string;
+  assigned_at?: string;
+  assigned_by?: string;
+  hr_users?: HRUser;
+}
+
 export interface HRTask {
   id: string;
   project_id: string;
   title: string;
   description: string | null;
-  assignee_id: string;
+  assignee_id?: string | null;
   status: TaskStatus;
   due_date: string | null;
   created_by: string | null;
@@ -50,6 +58,10 @@ export interface HRTask {
   updated_at: string;
   hr_users?: HRUser;
   hr_projects?: HRProject;
+  hr_task_assignees?: {
+    user_id: string;
+    hr_users?: HRUser;
+  }[];
 }
 
 export interface HRTaskFile {

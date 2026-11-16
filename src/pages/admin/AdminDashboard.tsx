@@ -45,7 +45,12 @@ export const AdminDashboard: React.FC = () => {
           .limit(4),
         supabase
           .from('hr_tasks')
-          .select('*, hr_users:hr_users!hr_tasks_assignee_id_fkey(*), hr_projects(*)')
+          .select(`
+            *,
+            hr_users:hr_users!hr_tasks_assignee_id_fkey(*),
+            hr_projects(*),
+            hr_task_assignees(user_id, hr_users:hr_users!hr_task_assignees_user_id_fkey(*))
+          `)
           .order('updated_at', { ascending: false })
           .limit(5),
       ]);
@@ -221,7 +226,10 @@ export const AdminDashboard: React.FC = () => {
                       {t.title}
                     </h4>
                     <p className="text-[10px] text-slate-400 mt-0.5">
-                      المشروع: {t.hr_projects?.name} • المسند إليه: {t.hr_users?.full_name}
+                      المشروع: {t.hr_projects?.name} • المسند إليهم:{' '}
+                      {t.hr_task_assignees && t.hr_task_assignees.length > 0
+                        ? t.hr_task_assignees.map((a) => a.hr_users?.full_name || 'موظف').join('، ')
+                        : t.hr_users?.full_name || 'غير محدد'}
                     </p>
                   </div>
                   <Badge variant={t.status}>{getArabicStatus(t.status)}</Badge>

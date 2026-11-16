@@ -7,7 +7,7 @@ import { TableSkeleton } from '../../components/ui/Skeleton';
 import { Button } from '../../components/ui/button';
 import { CreateSelfTaskModal } from '../../components/tasks/CreateSelfTaskModal';
 import { useSearchParams } from 'react-router-dom';
-import { CheckSquare, Clock, CheckCircle2, Plus, UploadCloud } from 'lucide-react';
+import { CheckSquare, Clock, CheckCircle2, Plus, UploadCloud, Users } from 'lucide-react';
 
 export const EmployeeDashboard: React.FC = () => {
   const [, setSearchParams] = useSearchParams();
@@ -35,12 +35,30 @@ export const EmployeeDashboard: React.FC = () => {
           : row.hr_projects ? [row.hr_projects] : []) as unknown as HRProject[]) || [];
       setProjects(projList);
 
-      // 2. Fetch tasks assigned strictly to this logged-in employee
-      const { data: taskList, error: taskError } = await supabase
+      // 2. Fetch tasks assigned to this logged-in employee (via hr_task_assignees or legacy assignee_id)
+      const { data: assigneeRows } = await supabase
+        .from('hr_task_assignees')
+        .select('task_id')
+        .eq('user_id', hrUser.id);
+
+      const assignedTaskIds = (assigneeRows || []).map((r) => r.task_id);
+
+      let tasksQuery = supabase
         .from('hr_tasks')
-        .select('*, hr_projects(*)')
-        .eq('assignee_id', hrUser.id)
+        .select(`
+          *,
+          hr_projects(*),
+          hr_task_assignees(user_id, hr_users:hr_users!hr_task_assignees_user_id_fkey(*))
+        `)
         .order('updated_at', { ascending: false });
+
+      if (assignedTaskIds.length > 0) {
+        tasksQuery = tasksQuery.or(`assignee_id.eq.${hrUser.id},id.in.(${assignedTaskIds.join(',')})`);
+      } else {
+        tasksQuery = tasksQuery.eq('assignee_id', hrUser.id);
+      }
+
+      const { data: taskList, error: taskError } = await tasksQuery;
       if (taskError) throw taskError;
 
       setAssignedTasks((taskList as HRTask[]) || []);
@@ -211,6 +229,18 @@ export const EmployeeDashboard: React.FC = () => {
                       المشروع: {t.hr_projects?.name} • موعد التسليم:{' '}
                       {t.due_date ? new Date(t.due_date).toLocaleDateString('ar-EG') : 'غير محدد'}
                     </p>
+                    {t.hr_task_assignees && t.hr_task_assignees.length > 1 && (
+                      <p className="text-[10px] text-blue-600 dark:text-blue-400 mt-1 flex items-center gap-1 font-semibold">
+                        <Users className="size-3" />
+                        <span>
+                          مع:{' '}
+                          {t.hr_task_assignees
+                            .filter((a) => a.user_id !== hrUser?.id)
+                            .map((a) => a.hr_users?.full_name || 'موظف')
+                            .join('، ')}
+                        </span>
+                      </p>
+                    )}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-2">
                     <Badge variant={t.status}>{getArabicTaskStatus(t.status)}</Badge>

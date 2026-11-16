@@ -49,7 +49,7 @@ export const ProjectDetail: React.FC = () => {
   const [editProjectDescription, setEditProjectDescription] = useState('');
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDesc, setTaskDesc] = useState('');
-  const [taskAssignee, setTaskAssignee] = useState('');
+  const [taskAssignees, setTaskAssignees] = useState<string[]>([]);
   const [taskDueDate, setTaskDueDate] = useState('');
   const [taskSubmitting, setTaskSubmitting] = useState(false);
 
@@ -79,7 +79,11 @@ export const ProjectDetail: React.FC = () => {
       // 3. Fetch Tasks
       const { data: taskData, error: taskError } = await supabase
         .from('hr_tasks')
-        .select('*, hr_users:hr_users!hr_tasks_assignee_id_fkey(*)')
+        .select(`
+          *,
+          hr_users:hr_users!hr_tasks_assignee_id_fkey(*),
+          hr_task_assignees(user_id, hr_users:hr_users!hr_task_assignees_user_id_fkey(*))
+        `)
         .eq('project_id', projectId)
         .order('created_at', { ascending: false });
       if (taskError) throw taskError;
@@ -172,28 +176,41 @@ export const ProjectDetail: React.FC = () => {
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!taskTitle.trim() || !taskAssignee || !projectId) return;
+    if (!taskTitle.trim() || !projectId) return;
+    if (taskAssignees.length === 0) {
+      await showAlert('يرجى اختيار موظف واحد على الأقل للمهمة.');
+      return;
+    }
     setTaskSubmitting(true);
 
     try {
-      const { error } = await supabase
+      const { data: newTask, error } = await supabase
         .from('hr_tasks')
         .insert({
           project_id: projectId,
           title: taskTitle.trim(),
           description: taskDesc.trim() || null,
-          assignee_id: taskAssignee,
+          assignee_id: taskAssignees[0] || null,
           due_date: taskDueDate ? new Date(taskDueDate).toISOString() : null,
           created_by: hrUser?.id,
           status: 'todo',
-        });
+        })
+        .select()
+        .single();
 
       if (error) throw error;
+
+      if (newTask && taskAssignees.length > 0) {
+        await supabase.rpc('hr_set_task_assignees', {
+          p_task_id: newTask.id,
+          p_user_ids: taskAssignees,
+        });
+      }
 
       setIsAddTaskOpen(false);
       setTaskTitle('');
       setTaskDesc('');
-      setTaskAssignee('');
+      setTaskAssignees([]);
       setTaskDueDate('');
       await fetchProjectData();
     } catch (err: unknown) {
@@ -434,7 +451,16 @@ export const ProjectDetail: React.FC = () => {
                   </p>
 
                   <div className="pt-2 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-100 dark:border-slate-800">
-                    <span>المسند إليه: {task.hr_users?.full_name || 'غير محدد'}</span>
+                    <span>
+                      {(() => {
+                        const assignees =
+                          (task.hr_task_assignees?.map((a) => a.hr_users).filter(Boolean) as HRUser[]) ||
+                          (task.hr_users ? [task.hr_users] : []);
+                        return assignees.length > 0
+                          ? `المسند إليهم: ${assignees.map((u) => u.full_name).join('، ')}`
+                          : 'المسند إليه: غير محدد';
+                      })()}
+                    </span>
                     <div className="flex items-center gap-2">
                       <span>
                         {task.due_date ? `موعد التسليم: ${new Date(task.due_date).toLocaleDateString('ar-EG')}` : 'بدون موعد تسليم'}
@@ -627,34 +653,67 @@ export const ProjectDetail: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              الموظف المسند إليه (أعضاء المشروع فقط) *
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                الموظفون المسند إليهم المهمة (أعضاء المشروع فقط) *
+              </label>
+              {members.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (taskAssignees.length === members.length) {
+                      setTaskAssignees([]);
+                    } else {
+                      setTaskAssignees(members.map((m) => m.user_id));
+                    }
+                  }}
+                  className="text-[11px] font-bold text-blue-600 hover:text-blue-500 cursor-pointer"
+                >
+                  {taskAssignees.length === members.length
+                    ? 'إلغاء تحديد الكل'
+                    : 'تحديد جميع أعضاء المشروع'}
+                </button>
+              )}
+            </div>
+
             {members.length === 0 ? (
-              <p className="text-xs text-rose-500">
+              <p className="text-xs text-rose-500 bg-rose-50 dark:bg-rose-950/40 p-2.5 rounded-xl border border-rose-200 dark:border-rose-900">
                 لا يوجد أعضاء في المشروع! يرجى إضافة عضو للمشروع أولاً قبل إنشاء المهام.
               </p>
             ) : (
-              <Select
-                required
-                value={taskAssignee || null}
-                onValueChange={(value) => setTaskAssignee(value || '')}
-                items={members.map((member) => ({
-                  value: member.user_id,
-                  label: `${member.hr_users?.full_name || 'موظف'} (${member.hr_users?.role === 'admin' ? 'أدمن' : 'موظف'})`,
-                }))}
-              >
-                <SelectTrigger className="h-10 w-full rounded-xl border-slate-200 bg-slate-50 text-xs dark:border-slate-700 dark:bg-slate-800">
-                  <SelectValue placeholder="-- اختر الموظف المسند إليه --" />
-                </SelectTrigger>
-                <SelectContent align="start">
-                  {members.map((m) => (
-                    <SelectItem key={m.user_id} value={m.user_id}>
-                      {m.hr_users?.full_name} ({m.hr_users?.role === 'admin' ? 'أدمن' : 'موظف'})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                {members.map((m) => {
+                  const isSelected = taskAssignees.includes(m.user_id);
+                  return (
+                    <label
+                      key={m.user_id}
+                      className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer border transition-all text-xs select-none ${
+                        isSelected
+                          ? 'bg-blue-50/80 border-blue-500/80 text-blue-900 dark:bg-blue-950/40 dark:border-blue-700 dark:text-blue-200 shadow-xs'
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {
+                          if (isSelected) {
+                            setTaskAssignees(taskAssignees.filter((id) => id !== m.user_id));
+                          } else {
+                            setTaskAssignees([...taskAssignees, m.user_id]);
+                          }
+                        }}
+                        className="size-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500"
+                      />
+                      <div className="size-6 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                        {m.hr_users?.full_name?.charAt(0) || 'م'}
+                      </div>
+                      <span className="font-semibold truncate flex-1">{m.hr_users?.full_name}</span>
+                      <span className="text-[10px] text-slate-400">({m.hr_users?.role === 'admin' ? 'أدمن' : 'موظف'})</span>
+                    </label>
+                  );
+                })}
+              </div>
             )}
           </div>
 

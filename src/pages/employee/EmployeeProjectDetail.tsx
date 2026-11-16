@@ -7,7 +7,7 @@ import { TableSkeleton } from '../../components/ui/Skeleton';
 import { Button } from '../../components/ui/button';
 import { CreateSelfTaskModal } from '../../components/tasks/CreateSelfTaskModal';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRight, CheckSquare, Plus, UploadCloud } from 'lucide-react';
+import { ArrowRight, CheckSquare, Plus, UploadCloud, Users } from 'lucide-react';
 
 export const EmployeeProjectDetail: React.FC = () => {
   const { id: projectId } = useParams<{ id: string }>();
@@ -34,13 +34,30 @@ export const EmployeeProjectDetail: React.FC = () => {
       if (projErr) throw projErr;
       setProject(projData as HRProject);
 
-      // 2. Fetch tasks assigned strictly to this employee inside this project
-      const { data: taskData, error: taskError } = await supabase
+      // 2. Fetch tasks assigned to this employee inside this project
+      const { data: assigneeRows } = await supabase
+        .from('hr_task_assignees')
+        .select('task_id')
+        .eq('user_id', hrUser.id);
+
+      const assignedTaskIds = (assigneeRows || []).map((r) => r.task_id);
+
+      let tasksQuery = supabase
         .from('hr_tasks')
-        .select('*')
+        .select(`
+          *,
+          hr_task_assignees(user_id, hr_users:hr_users!hr_task_assignees_user_id_fkey(*))
+        `)
         .eq('project_id', projectId)
-        .eq('assignee_id', hrUser.id)
         .order('created_at', { ascending: false });
+
+      if (assignedTaskIds.length > 0) {
+        tasksQuery = tasksQuery.or(`assignee_id.eq.${hrUser.id},id.in.(${assignedTaskIds.join(',')})`);
+      } else {
+        tasksQuery = tasksQuery.eq('assignee_id', hrUser.id);
+      }
+
+      const { data: taskData, error: taskError } = await tasksQuery;
       if (taskError) throw taskError;
 
       setMyTasks((taskData as HRTask[]) || []);
@@ -143,6 +160,19 @@ export const EmployeeProjectDetail: React.FC = () => {
                 <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
                   {task.description || 'لا يوجد وصف'}
                 </p>
+
+                {task.hr_task_assignees && task.hr_task_assignees.length > 1 && (
+                  <p className="text-[10px] text-blue-600 dark:text-blue-400 flex items-center gap-1 font-semibold">
+                    <Users className="size-3" />
+                    <span>
+                      مع:{' '}
+                      {task.hr_task_assignees
+                        .filter((a) => a.user_id !== hrUser?.id)
+                        .map((a) => a.hr_users?.full_name || 'موظف')
+                        .join('، ')}
+                    </span>
+                  </p>
+                )}
 
                 <div className="pt-2 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-100 dark:border-slate-800">
                   <span>

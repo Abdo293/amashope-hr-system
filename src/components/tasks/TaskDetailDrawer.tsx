@@ -4,14 +4,12 @@ import { useAuth } from '../../context/AuthContext';
 import type { HRTask, HRTaskFile, HRTaskActivity, HRProjectMember, TaskStatus } from '../../types/hr';
 import { Drawer } from '../ui/Drawer';
 import { Badge } from '../ui/Badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
 import { uploadFileToR2, getFileDownloadUrl, deleteTaskFile } from '../../lib/r2-client';
 import { useSearchParams } from 'react-router-dom';
 import {
   Calendar,
   CheckCircle2,
-  Clock,
   FileText,
   UploadCloud,
   Trash2,
@@ -25,6 +23,7 @@ import {
   Video,
   Pencil,
   RefreshCw,
+  Users,
 } from 'lucide-react';
 import { getErrorMessage } from '../../lib/utils';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -70,7 +69,12 @@ export const TaskDetailDrawer: React.FC = () => {
       // Fetch task
       const { data: taskData, error: taskErr } = await supabase
         .from('hr_tasks')
-        .select('*, hr_users:hr_users!hr_tasks_assignee_id_fkey(*), hr_projects(*)')
+        .select(`
+          *,
+          hr_users:hr_users!hr_tasks_assignee_id_fkey(*),
+          hr_projects(*),
+          hr_task_assignees(user_id, hr_users:hr_users!hr_task_assignees_user_id_fkey(*))
+        `)
         .eq('id', taskId)
         .single();
 
@@ -168,18 +172,32 @@ export const TaskDetailDrawer: React.FC = () => {
     }
   };
 
-  const handleReassign = async (assigneeId: string) => {
-    if (!task || assigneeId === task.assignee_id) return;
+  const handleToggleAssignee = async (userId: string) => {
+    if (!task) return;
+    const currentAssigneeIds =
+      task.hr_task_assignees?.map((a) => a.user_id) || (task.assignee_id ? [task.assignee_id] : []);
+    let newAssigneeIds: string[];
+    if (currentAssigneeIds.includes(userId)) {
+      if (currentAssigneeIds.length <= 1) {
+        alert('يجب أن تحتوي المهمة على موظف مسند إليه واحد على الأقل.');
+        return;
+      }
+      newAssigneeIds = currentAssigneeIds.filter((id) => id !== userId);
+    } else {
+      newAssigneeIds = [...currentAssigneeIds, userId];
+    }
+
     setStatusUpdating(true);
     try {
-      const { data, error } = await supabase.rpc('hr_reassign_task', {
+      const { data, error } = await supabase.rpc('hr_set_task_assignees', {
         p_task_id: task.id,
-        p_assignee_id: assigneeId,
+        p_user_ids: newAssigneeIds,
       });
-      if (error || !data?.success) throw error || new Error('فشل إعادة إسناد المهمة');
+      if (error || !data?.success) throw error || new Error('فشل تحديث موظفي المهمة');
       await fetchTaskDetails();
+      window.dispatchEvent(new CustomEvent('hr:task-updated', { detail: { taskId: task.id } }));
     } catch (error) {
-      alert(`فشل إعادة الإسناد: ${error instanceof Error ? error.message : String(error)}`);
+      alert(`فشل تحديث الإسناد: ${getErrorMessage(error)}`);
     } finally {
       setStatusUpdating(false);
     }
@@ -286,7 +304,9 @@ export const TaskDetailDrawer: React.FC = () => {
 
   const isProjectArchived = task?.hr_projects?.status === 'archived';
   const isAdmin = hrUser?.role === 'admin';
-  const isAssignee = task?.assignee_id === hrUser?.id;
+  const isAssignee =
+    task?.assignee_id === hrUser?.id ||
+    Boolean(task?.hr_task_assignees?.some((a) => a.user_id === hrUser?.id));
   const canUpdateStatus = !isProjectArchived && (isAdmin || isAssignee);
   const canUploadFiles = !isProjectArchived && !isAdmin && isAssignee;
   const latestFile = files[0];
@@ -435,27 +455,45 @@ export const TaskDetailDrawer: React.FC = () => {
 
           {isAdmin && projectMembers.length > 0 && !isProjectArchived && (
             <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-              <label className="mb-2 block text-xs font-bold text-slate-500">إعادة إسناد المهمة</label>
-              <Select
-                value={task.assignee_id}
-                onValueChange={(value) => value && handleReassign(value)}
-                disabled={statusUpdating}
-                items={projectMembers.map((member) => ({
-                  value: member.user_id,
-                  label: member.hr_users?.full_name || 'موظف',
-                }))}
-              >
-                <SelectTrigger className="h-10 w-full rounded-xl border-slate-200 bg-slate-50 text-xs dark:border-slate-700 dark:bg-slate-800">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="start">
-                  {projectMembers.map((member) => (
-                    <SelectItem key={member.user_id} value={member.user_id}>
-                      {member.hr_users?.full_name || 'موظف'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Users className="size-4 text-blue-600 dark:text-blue-400" />
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                    الموظفون المكلفون بالمهمة ({task.hr_task_assignees?.length || (task.assignee_id ? 1 : 0)})
+                  </label>
+                </div>
+                <span className="text-[11px] text-slate-400">انقر لإضافة أو إزالة موظف</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {projectMembers.map((member) => {
+                  const isAssigned =
+                    task.hr_task_assignees?.some((a) => a.user_id === member.user_id) ||
+                    task.assignee_id === member.user_id;
+                  return (
+                    <button
+                      key={member.user_id}
+                      type="button"
+                      disabled={statusUpdating}
+                      onClick={() => handleToggleAssignee(member.user_id)}
+                      className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
+                        isAssigned
+                          ? 'border border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-600 dark:bg-blue-950/50 dark:text-blue-300'
+                          : 'border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-400 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <span
+                        className={`size-2 rounded-full ${
+                          isAssigned ? 'bg-blue-600 dark:bg-blue-400' : 'bg-slate-300 dark:bg-slate-600'
+                        }`}
+                      />
+                      <span>{member.hr_users?.full_name || 'موظف'}</span>
+                      {isAssigned && (
+                        <CheckCircle2 className="size-3.5 text-blue-600 dark:text-blue-400" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -515,21 +553,38 @@ export const TaskDetailDrawer: React.FC = () => {
               </p>
             )}
 
-            <div className="grid grid-cols-2 gap-4 pt-2">
-              <div className="flex items-center gap-2 text-xs">
-                <Clock className="w-4 h-4 text-slate-400" />
-                <span className="text-slate-500 font-medium">المسند إليه:</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200">
-                  {task.hr_users?.full_name || 'غير محدد'}
-                </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+              <div className="flex items-start gap-2 text-xs">
+                <Users className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+                <div>
+                  <span className="text-slate-500 font-medium block mb-1">المسند إليهم:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {task.hr_task_assignees && task.hr_task_assignees.length > 0 ? (
+                      task.hr_task_assignees.map((a) => (
+                        <span
+                          key={a.user_id}
+                          className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800"
+                        >
+                          {a.hr_users?.full_name || 'موظف'}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="font-bold text-slate-800 dark:text-slate-200">
+                        {task.hr_users?.full_name || 'غير محدد'}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 text-xs">
-                <Calendar className="w-4 h-4 text-slate-400" />
-                <span className="text-slate-500 font-medium">موعد التسليم:</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200">
-                  {task.due_date ? new Date(task.due_date).toLocaleDateString('ar-EG') : 'غير محدد'}
-                </span>
+              <div className="flex items-start gap-2 text-xs">
+                <Calendar className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+                <div>
+                  <span className="text-slate-500 font-medium block mb-1">موعد التسليم:</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-200">
+                    {task.due_date ? new Date(task.due_date).toLocaleDateString('ar-EG') : 'غير محدد'}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
