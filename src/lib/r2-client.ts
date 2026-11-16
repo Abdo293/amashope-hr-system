@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import type { HRTaskFile } from '../types/hr';
+import { optimizeTaskImage } from './optimizeImage';
 
 export interface UploadProgressCallback {
   (progress: number): void;
@@ -43,6 +44,7 @@ async function uploadThroughLocalDemoProxy(
 
 /**
  * Uploads a file to Cloudflare R2 using server-side Presigned URL and records metadata in Supabase.
+ * Automatically compresses and converts images (JPEG, PNG, WebP) to optimized WebP.
  */
 export async function uploadFileToR2(
   taskId: string,
@@ -54,9 +56,12 @@ export async function uploadFileToR2(
     throw new Error('انتهت جلسة تسجيل الدخول. سجّل الدخول مرة أخرى.');
   }
 
+  // Optimize and convert images to WebP if applicable
+  const fileToUpload = await optimizeTaskImage(file);
+
   const isLocalDemo = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   if (isLocalDemo) {
-    return uploadThroughLocalDemoProxy(taskId, file, onProgress);
+    return uploadThroughLocalDemoProxy(taskId, fileToUpload, onProgress);
   }
 
   // 1. Get Presigned Upload URL from Edge Function
@@ -64,9 +69,9 @@ export async function uploadFileToR2(
     body: {
       action: 'get_upload_url',
       task_id: taskId,
-      original_name: file.name,
-      mime_type: file.type || 'application/octet-stream',
-      size_bytes: file.size,
+      original_name: fileToUpload.name,
+      mime_type: fileToUpload.type || 'application/octet-stream',
+      size_bytes: fileToUpload.size,
     },
   });
 
@@ -91,7 +96,7 @@ export async function uploadFileToR2(
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('PUT', upload_url, true);
-      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+      xhr.setRequestHeader('Content-Type', fileToUpload.type || 'application/octet-stream');
       xhr.timeout = 10 * 60 * 1000;
 
       if (xhr.upload && onProgress) {
@@ -115,7 +120,7 @@ export async function uploadFileToR2(
       xhr.ontimeout = () => reject(new Error('استغرق رفع الملف وقتًا طويلًا. تحقق من الاتصال وحاول مرة أخرى.'));
       xhr.onabort = () => reject(new Error('تم إلغاء رفع الملف.'));
 
-      xhr.send(file);
+      xhr.send(fileToUpload);
     });
 
     // 3. Let the server verify R2 and atomically publish the metadata.
