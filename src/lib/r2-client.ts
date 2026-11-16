@@ -6,26 +6,7 @@ export interface UploadProgressCallback {
   (progress: number): void;
 }
 
-const LOCAL_DEMO_PROXY_MAX_BYTES = 18 * 1024 * 1024;
-
-const MAX_FILE_SIZES: Record<string, { maxBytes: number; label: string }> = {
-  'application/zip': { maxBytes: 50 * 1024 * 1024, label: '50 ميجابايت لملفات ZIP' },
-  'application/pdf': { maxBytes: 25 * 1024 * 1024, label: '25 ميجابايت لملفات PDF' },
-  'video/mp4': { maxBytes: 100 * 1024 * 1024, label: '100 ميجابايت لمقاطع الفيديو' },
-  'video/webm': { maxBytes: 100 * 1024 * 1024, label: '100 ميجابايت لمقاطع الفيديو' },
-  'video/quicktime': { maxBytes: 100 * 1024 * 1024, label: '100 ميجابايت لمقاطع الفيديو' },
-  'text/csv': { maxBytes: 25 * 1024 * 1024, label: '25 ميجابايت لملفات CSV' },
-  'application/msword': { maxBytes: 25 * 1024 * 1024, label: '25 ميجابايت للمستندات' },
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { maxBytes: 25 * 1024 * 1024, label: '25 ميجابايت للمستندات' },
-  'application/vnd.ms-excel': { maxBytes: 25 * 1024 * 1024, label: '25 ميجابايت لملفات Excel' },
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': { maxBytes: 25 * 1024 * 1024, label: '25 ميجابايت لملفات Excel' },
-  'application/vnd.ms-powerpoint': { maxBytes: 25 * 1024 * 1024, label: '25 ميجابايت للعروض التقديمية' },
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': { maxBytes: 25 * 1024 * 1024, label: '25 ميجابايت للعروض التقديمية' },
-  'image/jpeg': { maxBytes: 10 * 1024 * 1024, label: '10 ميجابايت للصور' },
-  'image/png': { maxBytes: 10 * 1024 * 1024, label: '10 ميجابايت للصور' },
-  'image/webp': { maxBytes: 10 * 1024 * 1024, label: '10 ميجابايت للصور' },
-  'image/gif': { maxBytes: 10 * 1024 * 1024, label: '10 ميجابايت للصور' },
-};
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB (Cloudflare R2 single PUT limit)
 
 /**
  * Resolves the canonical MIME type expected by hr-r2-storage.
@@ -62,48 +43,10 @@ export function resolveCanonicalMimeType(file: File): string {
   return file.type || 'application/octet-stream';
 }
 
-async function uploadThroughLocalDemoProxy(
-  taskId: string,
-  file: File,
-  mimeType: string,
-  onProgress?: UploadProgressCallback,
-) {
-  if (file.size > LOCAL_DEMO_PROXY_MAX_BYTES) {
-    throw new Error('في وضع التجربة المحلية يجب ألا يزيد حجم الملف عن 18MB.');
-  }
-
-  const normalizedFile = file.type === mimeType
-    ? file
-    : new File([file], file.name, { type: mimeType, lastModified: file.lastModified });
-
-  const formData = new FormData();
-  formData.append('action', 'upload_local_demo');
-  formData.append('task_id', taskId);
-  formData.append('file', normalizedFile, normalizedFile.name);
-
-  onProgress?.(15);
-  const { data, error } = await supabase.functions.invoke('hr-r2-storage', {
-    body: formData,
-  });
-
-  if (error || !data?.success || !data?.file) {
-    const message = data?.details || (data?.error === 'LOCAL_DEMO_FILE_SIZE_EXCEEDED'
-      ? 'في وضع التجربة المحلية يجب ألا يزيد حجم الملف عن 18MB.'
-      : data?.error === 'FILE_TYPE_NOT_ALLOWED' || data?.error === 'UPLOADED_CONTENT_SIGNATURE_MISMATCH'
-        ? 'نوع الملف أو محتواه غير مسموح به.'
-        : data?.error === 'R2_UPLOAD_FAILED'
-          ? 'تعذّر حفظ الملف. راجع إعدادات خدمة الملفات ثم حاول مرة أخرى.'
-          : 'تعذّر رفع الملف في وضع التجربة المحلية. تأكد من نشر آخر إصدار من خدمة الرفع.');
-    throw new Error(message);
-  }
-
-  onProgress?.(100);
-  return data.file as HRTaskFile;
-}
-
 /**
  * Uploads a file to Cloudflare R2 using server-side Presigned URL and records metadata in Supabase.
  * Automatically compresses and converts images (JPEG, PNG, WebP) to optimized WebP.
+ * Supports direct uploads of any size up to 5 GB.
  */
 export async function uploadFileToR2(
   taskId: string,
@@ -119,14 +62,8 @@ export async function uploadFileToR2(
   const fileToUpload = await optimizeTaskImage(file);
   const mimeType = resolveCanonicalMimeType(fileToUpload);
 
-  const sizeLimit = MAX_FILE_SIZES[mimeType];
-  if (sizeLimit && fileToUpload.size > sizeLimit.maxBytes) {
-    throw new Error(`حجم الملف يتجاوز الحد المسموح به (${sizeLimit.label}).`);
-  }
-
-  const isLocalDemo = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  if (isLocalDemo) {
-    return uploadThroughLocalDemoProxy(taskId, fileToUpload, mimeType, onProgress);
+  if (fileToUpload.size > MAX_FILE_SIZE_BYTES) {
+    throw new Error('حجم الملف يتجاوز الحد الأقصى المسموح به (5 جيجابايت).');
   }
 
   // 1. Get Presigned Upload URL from Edge Function
