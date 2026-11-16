@@ -118,14 +118,18 @@ export const ChangePasswordPage: React.FC = () => {
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 px-4 py-12 flex items-center justify-center font-sans" dir="rtl">
-      <section className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/95 p-7 shadow-2xl">
+    <main className="min-h-screen bg-slate-50 px-4 py-12 flex items-center justify-center font-sans relative overflow-hidden" dir="rtl">
+      {/* Background Decor */}
+      <div className="absolute -top-40 -left-40 w-96 h-96 bg-blue-100/70 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-indigo-100/70 rounded-full blur-3xl pointer-events-none" />
+
+      <section className="w-full max-w-md rounded-3xl border border-slate-200/80 bg-white/95 p-7 sm:p-9 shadow-xl shadow-slate-200/60 backdrop-blur-xl relative z-10">
         {done ? (
           <div className="space-y-5 text-center">
-            <CheckCircle2 className="mx-auto size-12 text-emerald-400" />
+            <CheckCircle2 className="mx-auto size-12 text-emerald-600" />
             <div>
-              <h1 className="text-xl font-black text-white">تم تغيير كلمة المرور بنجاح</h1>
-              <p className="mt-2 text-xs text-slate-400">
+              <h1 className="text-xl font-black text-slate-900">تم تغيير كلمة المرور بنجاح</h1>
+              <p className="mt-2 text-xs font-medium text-slate-500">
                 تم حفظ كلمة المرور الجديدة، جاري تحويلك إلى النظام تلقائيًا...
               </p>
             </div>
@@ -134,7 +138,7 @@ export const ChangePasswordPage: React.FC = () => {
                 if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
                 navigate(destination, { replace: true });
               }}
-              className="h-11 w-full rounded-xl bg-blue-600 text-white hover:bg-blue-500"
+              className="h-11 w-full rounded-xl bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-500/20 font-bold"
             >
               الدخول إلى النظام الآن
             </Button>
@@ -143,15 +147,15 @@ export const ChangePasswordPage: React.FC = () => {
           <form onSubmit={handleSubmit} noValidate className="space-y-5">
             <div className="text-center">
               <div className="mb-4 flex justify-center">
-                <img src="/logo.webp" alt="AmaShope" className="h-10 w-auto object-contain" />
+                <img src="/logo.webp" alt="AmaShope" className="h-12 w-auto object-contain drop-shadow-sm" />
               </div>
-              <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-blue-600/15 text-blue-400">
+              <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 border border-blue-100">
                 <KeyRound className="size-6" />
               </div>
-              <h1 className="text-xl font-black text-white">
+              <h1 className="text-xl font-black text-slate-900">
                 {hrUser?.must_change_password ? 'أنشئ كلمة مرور خاصة بك' : 'تغيير كلمة المرور'}
               </h1>
-              <p className="mt-2 text-xs leading-5 text-slate-400">
+              <p className="mt-1.5 text-xs font-medium leading-5 text-slate-500">
                 {hrUser?.must_change_password
                   ? 'هذه أول مرة تدخل فيها أو أعاد الأدمن تعيين حسابك. يجب تغيير كلمة المرور المؤقتة للمتابعة.'
                   : 'أدخل كلمة المرور الحالية، ثم اختر كلمة مرور جديدة قوية.'}
@@ -159,12 +163,12 @@ export const ChangePasswordPage: React.FC = () => {
             </div>
 
             {error && (
-              <div role="alert" className="rounded-xl border border-rose-800 bg-rose-950/50 p-3 text-xs font-semibold leading-5 text-rose-300">
+              <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold leading-5 text-rose-700">
                 {error}
               </div>
             )}
 
-            <label className="block space-y-1.5 text-xs font-bold text-slate-300">
+            <label className="block space-y-1.5 text-xs font-bold text-slate-700">
               <span>كلمة المرور الحالية</span>
               <input
                 type="password"
@@ -175,11 +179,11 @@ export const ChangePasswordPage: React.FC = () => {
                   setCurrentPassword(event.target.value);
                   setError(null);
                 }}
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-slate-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
               />
             </label>
 
-            <label className="block space-y-1.5 text-xs font-bold text-slate-300">
+            <label className="block space-y-1.5 text-xs font-bold text-slate-700">
               <span>كلمة المرور الجديدة</span>
               <input
                 type="password"
@@ -193,18 +197,18 @@ export const ChangePasswordPage: React.FC = () => {
                   setError(null);
                 }}
                 aria-invalid={newPassword.length > 0 && !isStrongPassword}
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-slate-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
               />
             </label>
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-              <p className="mb-3 text-xs font-bold text-slate-300">اتبع الخطوات التالية:</p>
+            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
+              <p className="mb-3 text-xs font-bold text-slate-700">اتبع الخطوات التالية:</p>
               <ol className="space-y-2">
                 {passwordRules.map((rule, index) => (
                   <li
                     key={rule.id}
-                    className={`flex items-center gap-2 text-[11px] transition-colors ${
-                      rule.passed ? 'text-emerald-400' : newPassword ? 'text-rose-300' : 'text-slate-500'
+                    className={`flex items-center gap-2 text-[11px] font-medium transition-colors ${
+                      rule.passed ? 'text-emerald-600' : newPassword ? 'text-rose-500' : 'text-slate-400'
                     }`}
                   >
                     {rule.passed
@@ -216,7 +220,7 @@ export const ChangePasswordPage: React.FC = () => {
               </ol>
             </div>
 
-            <label className="block space-y-1.5 text-xs font-bold text-slate-300">
+            <label className="block space-y-1.5 text-xs font-bold text-slate-700">
               <span>تأكيد كلمة المرور الجديدة</span>
               <input
                 type="password"
@@ -230,28 +234,28 @@ export const ChangePasswordPage: React.FC = () => {
                   setError(null);
                 }}
                 aria-invalid={confirmation.length > 0 && !passwordsMatch}
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-slate-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
               />
               {confirmation.length > 0 && (
-                <span className={`flex items-center gap-1.5 pt-1 font-normal text-[11px] ${passwordsMatch ? 'text-emerald-400' : 'text-rose-300'}`}>
+                <span className={`flex items-center gap-1.5 pt-1 font-medium text-[11px] ${passwordsMatch ? 'text-emerald-600' : 'text-rose-600'}`}>
                   {passwordsMatch ? <CheckCircle2 className="size-3.5" /> : <Circle className="size-3.5" />}
                   {passwordsMatch ? 'كلمتا المرور متطابقتان' : 'كلمتا المرور غير متطابقتين'}
                 </span>
               )}
             </label>
 
-            <Button type="submit" disabled={submitting} className="h-11 w-full rounded-xl bg-blue-600 text-white hover:bg-blue-500">
+            <Button type="submit" disabled={submitting} className="h-11 w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold shadow-md shadow-blue-500/20 transition-all">
               {submitting && <Loader2 className="size-4 animate-spin" />}
               حفظ كلمة المرور الجديدة
             </Button>
 
             {!hrUser?.must_change_password && (
-              <Button type="button" variant="ghost" onClick={() => navigate(destination)} className="w-full text-slate-400 hover:text-white">
+              <Button type="button" variant="ghost" onClick={() => navigate(destination)} className="w-full text-slate-500 hover:text-slate-800 hover:bg-slate-100 font-semibold">
                 رجوع بدون تغيير
               </Button>
             )}
             {hrUser?.must_change_password && (
-              <Button type="button" variant="ghost" onClick={logout} className="w-full text-slate-400 hover:text-white">
+              <Button type="button" variant="ghost" onClick={logout} className="w-full text-slate-500 hover:text-rose-600 hover:bg-rose-50 font-semibold">
                 تسجيل الخروج
               </Button>
             )}

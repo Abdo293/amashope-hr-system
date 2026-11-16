@@ -41,14 +41,18 @@ export const ResetPasswordPage: React.FC = () => {
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 px-4 py-12 flex items-center justify-center font-sans" dir="rtl">
-      <section className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/90 p-7 shadow-2xl">
+    <main className="min-h-screen bg-slate-50 px-4 py-12 flex items-center justify-center font-sans relative overflow-hidden" dir="rtl">
+      {/* Background Decor */}
+      <div className="absolute -top-40 -left-40 w-96 h-96 bg-blue-100/70 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-indigo-100/70 rounded-full blur-3xl pointer-events-none" />
+
+      <section className="w-full max-w-md rounded-3xl border border-slate-200/80 bg-white/95 p-7 sm:p-9 shadow-xl shadow-slate-200/60 backdrop-blur-xl relative z-10">
         {done ? (
           <div className="space-y-5 text-center">
-            <CheckCircle2 className="mx-auto size-12 text-emerald-400" />
+            <CheckCircle2 className="mx-auto size-12 text-emerald-600" />
             <div>
-              <h1 className="text-xl font-black text-white">تم حفظ كلمة المرور</h1>
-              <p className="mt-2 text-xs text-slate-400">يمكنك الآن الدخول إلى حسابك بصورة طبيعية.</p>
+              <h1 className="text-xl font-black text-slate-900">تم حفظ كلمة المرور</h1>
+              <p className="mt-2 text-xs font-medium text-slate-500">يمكنك الآن الدخول إلى حسابك بصورة طبيعية.</p>
             </div>
             <button
               type="button"
@@ -56,7 +60,7 @@ export const ResetPasswordPage: React.FC = () => {
                 await supabase.auth.signOut();
                 navigate('/login', { replace: true });
               }}
-              className="w-full rounded-xl bg-blue-600 px-4 py-3 text-xs font-bold text-white hover:bg-blue-500"
+              className="w-full rounded-xl bg-blue-600 px-4 py-3 text-xs font-bold text-white hover:bg-blue-700 shadow-md shadow-blue-500/20"
             >
               الذهاب لتسجيل الدخول
             </button>
@@ -64,16 +68,19 @@ export const ResetPasswordPage: React.FC = () => {
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="text-center">
-              <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-blue-600/15 text-blue-400">
+              <div className="mb-4 flex justify-center">
+                <img src="/logo.webp" alt="AmaShope" className="h-12 w-auto object-contain drop-shadow-sm" />
+              </div>
+              <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 border border-blue-100">
                 <KeyRound className="size-6" />
               </div>
-              <h1 className="text-xl font-black text-white">اختيار كلمة مرور جديدة</h1>
-              <p className="mt-2 text-xs text-slate-400">استخدم 12 حرفًا على الأقل وتجنب كلمات المرور المتوقعة.</p>
+              <h1 className="text-xl font-black text-slate-900">اختيار كلمة مرور جديدة</h1>
+              <p className="mt-1.5 text-xs font-medium text-slate-500">استخدم 12 حرفًا على الأقل وتجنب كلمات المرور المتوقعة.</p>
             </div>
 
-            {error && <div className="rounded-xl border border-rose-800 bg-rose-950/50 p-3 text-xs text-rose-300">{error}</div>}
+            {error && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700">{error}</div>}
 
-            <label className="block space-y-1.5 text-xs font-bold text-slate-300">
+            <label className="block space-y-1.5 text-xs font-bold text-slate-700">
               <span>كلمة المرور الجديدة</span>
               <input
                 type="password"
@@ -82,11 +89,11 @@ export const ResetPasswordPage: React.FC = () => {
                 required
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-slate-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
               />
             </label>
 
-            <label className="block space-y-1.5 text-xs font-bold text-slate-300">
+            <label className="block space-y-1.5 text-xs font-bold text-slate-700">
               <span>تأكيد كلمة المرور</span>
               <input
                 type="password"
@@ -95,14 +102,14 @@ export const ResetPasswordPage: React.FC = () => {
                 required
                 value={confirmation}
                 onChange={(event) => setConfirmation(event.target.value)}
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-slate-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
               />
             </label>
 
             <button
               type="submit"
               disabled={submitting || authLoading}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-xs font-bold text-white hover:bg-blue-500 disabled:opacity-50"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 px-4 py-3 text-xs font-bold text-white shadow-md shadow-blue-500/20 disabled:opacity-50 transition-all"
             >
               {(submitting || authLoading) && <Loader2 className="size-4 animate-spin" />}
               حفظ كلمة المرور
