@@ -9,6 +9,7 @@ if (!supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
+    storageKey: 'amashope-hr-auth-token',
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
